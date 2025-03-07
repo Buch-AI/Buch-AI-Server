@@ -25,6 +25,10 @@ app.add_middleware(
 class DatabaseQueryRequest(BaseModel):
     query: str
 
+@app.get("/", tags=["root"])
+def root():
+    return {"message": "success"}
+
 # Create a router for database operations
 database_router = APIRouter()
 
@@ -48,4 +52,4 @@ app.include_router(database_router, prefix="/database")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
