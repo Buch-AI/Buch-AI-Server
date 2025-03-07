@@ -2,7 +2,7 @@ from google.cloud import bigquery
 
 dataset_id = "users"
 table_id = "auth"
-location = "europe-west2"
+location = "us-east1"
 
 def create_dataset(dataset_id):
     client = bigquery.Client()
