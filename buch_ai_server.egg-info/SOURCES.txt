@@ -1,0 +1,7 @@
+pyproject.toml
+setup.py
+buch_ai_server.egg-info/PKG-INFO
+buch_ai_server.egg-info/SOURCES.txt
+buch_ai_server.egg-info/dependency_links.txt
+buch_ai_server.egg-info/requires.txt
+buch_ai_server.egg-info/top_level.txt

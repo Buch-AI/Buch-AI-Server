@@ -1,0 +1,11 @@
+Metadata-Version: 2.2
+Name: buch-ai-server
+Version: 0.1.0
+Summary: A FastAPI application.
+Author-email: Your Name <your.email@example.com>
+Requires-Python: >=3.12
+Requires-Dist: fastapi>=0.95.0
+Requires-Dist: uvicorn>=0.22.0
+Requires-Dist: google-cloud-bigquery>=3.11.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.2.0; extra == "dev"

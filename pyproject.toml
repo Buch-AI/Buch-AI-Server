@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "buch-ai-server"
+version = "0.1.0"
+description = "A FastAPI application."
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+requires-python = ">= 3.12"
+dependencies = [
+    "fastapi>=0.95.0",
+    "uvicorn>=0.22.0",
+    "google-cloud-bigquery>=3.11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.2.0",
+    "ruff>=0.0.282"
+]
+
+[tool.ruff]
+select = ["I"]  # Enable import sorting rules
