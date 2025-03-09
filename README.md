@@ -1,5 +1,31 @@
 # Buch-AI-Server
 
+## Get started with development
+
+1. Clone the repository.
+
+```bash
+git clone https://github.com/Buch-AI/Buch-AI-Server.git
+```
+
+2. Verify that you have a compatible Python version installed on your machine.
+```bash
+python --version
+```
+
+3. Create a virtual environment and install the dependencies.
+```bash
+cd Buch-AI-Server/
+python -m venv venv
+source venv/bin/activate
+pip install -e ".[dev]"
+```
+
+4. Run the API in development mode.
+```bash
+fastapi dev main.py --port 8080
+```
+
 ## Deployment
 
 For naming conventions, refer to https://stepan.wtf/cloud-naming-convention/.

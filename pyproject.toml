@@ -12,8 +12,12 @@ authors = [
 requires-python = ">= 3.12"
 dependencies = [
     "fastapi>=0.95.0",
+    "fastapi[standard]>=0.95.0",
     "uvicorn>=0.22.0",
     "google-cloud-bigquery>=3.11.0",
+    "huggingface-hub>=0.29.2",
+    "python-dotenv>=1.0.1",
+    "aiohttp>=3.11.13",
 ]
 
 [project.optional-dependencies]
