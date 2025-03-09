@@ -66,7 +66,7 @@ HF_MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 class StoryRequest(BaseModel):
     prompt: str
 
-@llm_router.post("/generateStoryString")
+@llm_router.post("/generate_story_string")
 async def generate_story_string(request: StoryRequest) -> Response:
     client = InferenceClient(base_url="https://api-inference.huggingface.co", token=HF_API_KEY)
 
@@ -87,7 +87,7 @@ async def generate_story_string(request: StoryRequest) -> Response:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@llm_router.post("/generateStoryStream")
+@llm_router.post("/generate_story_stream")
 async def generate_story_stream(request: StoryRequest) -> StreamingResponse:
     async_client = AsyncInferenceClient(base_url="https://api-inference.huggingface.co", token=HF_API_KEY)
 
