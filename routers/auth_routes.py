@@ -146,14 +146,14 @@ async def login_for_access_token(
     return Token(access_token=access_token, token_type="bearer")
 
 
-@auth_router.get("/users/me/", response_model=User)
+@auth_router.get("/users/me", response_model=User)
 async def read_users_me(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     return current_user
 
 
-@auth_router.get("/users/me/items/")
+@auth_router.get("/users/me/items")
 async def read_own_items(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):

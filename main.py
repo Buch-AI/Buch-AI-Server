@@ -16,6 +16,7 @@ origins = [
     "http://localhost:8081",
     # Add other origins as needed
     "https://buch-ai.github.io",
+    "https://bai-buchai-p-run-usea1-server-333749286334.us-east1.run.app",
 ]
 
 # Add CORS middleware
