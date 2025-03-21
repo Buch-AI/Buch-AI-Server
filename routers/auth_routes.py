@@ -1,13 +1,17 @@
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import jwt
+from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from google.cloud import bigquery
 from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 from pydantic import BaseModel
+
+load_dotenv()
 
 # Create a router for authentication operations
 auth_router = APIRouter()
@@ -16,7 +20,7 @@ auth_router = APIRouter()
 client = bigquery.Client()
 
 # JWT configuration
-SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+SECRET_KEY = os.getenv("AUTH_JWT_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
