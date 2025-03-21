@@ -1,12 +1,19 @@
 import logging
 import os
 
+from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from huggingface_hub import AsyncInferenceClient, InferenceClient
 from pydantic import BaseModel
 
+load_dotenv()
+
 HF_API_KEY = os.getenv("HF_API_KEY")
+if not HF_API_KEY:
+    raise ValueError(
+        "HF_API_KEY environment variable is not set. Please set it in your .env file."
+    )
 HF_MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
 
