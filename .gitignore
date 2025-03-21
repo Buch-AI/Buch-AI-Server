@@ -1,3 +1,12 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -98,7 +107,7 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Environments
+# Environments and credentials
 .env
 .venv
 env/
@@ -106,6 +115,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+*key.json
+*.key.json
+credentials*.json
 
 # Spyder project settings
 .spyderproject
