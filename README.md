@@ -13,17 +13,21 @@ git clone https://github.com/Buch-AI/Buch-AI-Server.git
 python --version
 ```
 
-3. Create a virtual environment and install the dependencies.
+3. Install [uv](https://github.com/astral-sh/uv) (used as the package manager for this project).
+
+4. Install the development dependencies.
 ```bash
 cd Buch-AI-Server/
-python -m venv venv
-source venv/bin/activate
-pip install -e ".[dev]"
+uv sync --all-groups
+uv run pre-commit install
 ```
 
-4. Run the API in development mode.
+5. Run the API in development mode.
 ```bash
-fastapi dev main.py --port 8080
+# Either, ...
+uv run main.py
+# Or, ...
+uv run fastapi dev main.py --port 8080
 ```
 
 ## Deployment
