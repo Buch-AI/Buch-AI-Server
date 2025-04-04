@@ -1,22 +1,15 @@
 from google.cloud import bigquery
 
+from scripts.gcloud.bigquery import common
+
 dataset_id = "users"
 table_id = "auth"
 location = "us-east1"
 
-def create_dataset(dataset_id):
-    client = bigquery.Client()
-    dataset_ref = client.dataset(dataset_id)
-    dataset = bigquery.Dataset(dataset_ref)
-    dataset.location = location
-    dataset = client.create_dataset(dataset, exists_ok=True)
-    print(f"Dataset {dataset.dataset_id} created.")
-    return dataset.dataset_id
 
-def create_table(dataset_id, table_id):
-    client = bigquery.Client()
-    table_ref = client.dataset(dataset_id).table(table_id)
-    schema = [
+def get_schema():
+    """Define the schema for the auth table."""
+    return [
         bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("username", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("email", "STRING", mode="REQUIRED"),
@@ -26,13 +19,12 @@ def create_table(dataset_id, table_id):
         bigquery.SchemaField("is_active", "BOOLEAN", mode="REQUIRED"),
         bigquery.SchemaField("roles", "STRING", mode="REPEATED"),
     ]
-    table = bigquery.Table(table_ref, schema=schema)
-    table = client.create_table(table, exists_ok=True)
-    print(f"Table {table.table_id} created.")
+
 
 def main():
-    create_dataset(dataset_id)
-    create_table(dataset_id, table_id)
+    """Main function that handles both creation and updates."""
+    common.update_table_schema(dataset_id, table_id, get_schema(), location)
+
 
 if __name__ == "__main__":
     main()
