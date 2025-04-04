@@ -6,6 +6,7 @@ from routers.auth_routes import auth_router
 from routers.database_routes import database_router
 from routers.image_routes import image_router
 from routers.llm_routes import llm_router
+from routers.me_routes import me_router
 
 load_dotenv()
 
@@ -40,6 +41,7 @@ app.include_router(auth_router, prefix="/auth")
 app.include_router(database_router, prefix="/database")
 app.include_router(llm_router, prefix="/llm")
 app.include_router(image_router, prefix="/image")
+app.include_router(me_router, prefix="/me")
 
 if __name__ == "__main__":
     print(app.openapi())

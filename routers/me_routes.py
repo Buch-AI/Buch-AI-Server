@@ -1,14 +1,15 @@
+import base64
+import re
 import uuid
 from io import BytesIO
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import bigquery, storage
+from PIL import Image
 from pydantic import BaseModel, HttpUrl
 
 from .auth_routes import User, get_current_active_user
-from .image_routes import ImageGenerationRequest, generate_image
-from .llm_routes import GenerateStoryRequest, generate_story_string, split_story
 
 # Create a router for user-specific operations
 me_router = APIRouter()
@@ -18,7 +19,7 @@ BUCKET_NAME = "bai-buchai-p-stb-usea1-creations"
 
 
 class ImageData(BaseModel):
-    data: bytes
+    data: str
 
 
 class CreationResponse(BaseModel):
@@ -30,7 +31,7 @@ class StoryPartsResponse(BaseModel):
 
 
 class ImagesResponse(BaseModel):
-    data: List[bytes]
+    data: List[str]  # Base64 encoded PNG images
 
 
 class VideoResponse(BaseModel):
@@ -41,7 +42,7 @@ class GenerateResponse(BaseModel):
     data: HttpUrl
 
 
-@me_router.get("/me/creations", response_model=List[str])
+@me_router.get("/creations", response_model=List[str])
 async def get_user_creations(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> List[str]:
@@ -77,7 +78,7 @@ async def get_user_creations(
 
 
 @me_router.post(
-    "/me/creation/{creation_id}/set_story_parts", response_model=StoryPartsResponse
+    "/creation/{creation_id}/set_story_parts", response_model=StoryPartsResponse
 )
 async def set_story_parts(
     creation_id: str,
@@ -107,7 +108,7 @@ async def set_story_parts(
 
 
 @me_router.get(
-    "/me/creation/{creation_id}/get_story_parts", response_model=StoryPartsResponse
+    "/creation/{creation_id}/get_story_parts", response_model=StoryPartsResponse
 )
 async def get_story_parts(
     creation_id: str, current_user: Annotated[User, Depends(get_current_active_user)]
@@ -148,7 +149,7 @@ async def get_story_parts(
         )
 
 
-@me_router.post("/me/creation/{creation_id}/set_images", response_model=ImagesResponse)
+@me_router.post("/creation/{creation_id}/set_images", response_model=ImagesResponse)
 async def set_images(
     creation_id: str,
     images: List[ImageData],
@@ -159,15 +160,73 @@ async def set_images(
         # Initialize client
         storage_client = storage.Client()
         bucket = storage_client.bucket(BUCKET_NAME)
+        processed_images = []
 
         # Upload each image
         for index, image in enumerate(images, start=1):
-            # Upload to Google Cloud Storage
-            blob_path = f"{creation_id}/assets/{index}/image.png"
-            blob = bucket.blob(blob_path)
-            blob.upload_from_file(BytesIO(image.data))
+            try:
+                # Check if we have valid image data
+                if len(image.data) == 0:
+                    raise ValueError(f"Image {index} is empty")
 
-        return ImagesResponse(data=[img.data for img in images])
+                # Convert data URL to bytes if needed
+                img_bytes = BytesIO()
+                if isinstance(image.data, bytes):
+                    data_str = image.data.decode("utf-8")
+                else:
+                    data_str = image.data
+
+                if data_str.startswith("data:"):
+                    # Extract the base64 data from the data URL
+                    pattern = r"data:image/[^;]+;base64,(.+)"
+                    match = re.match(pattern, data_str)
+                    if not match:
+                        raise ValueError(f"Image {index} has invalid data URL format")
+
+                    # Decode base64 data
+                    img_data = base64.b64decode(match.group(1))
+                    img_bytes = BytesIO(img_data)
+                else:
+                    # Handle raw base64 string
+                    try:
+                        img_data = base64.b64decode(data_str)
+                        img_bytes = BytesIO(img_data)
+                    except Exception:
+                        raise ValueError(f"Image {index} has invalid base64 encoding")
+
+                # Open and validate the image
+                try:
+                    img = Image.open(img_bytes)
+                    img.verify()  # Verify it's a valid image
+                    img_bytes.seek(0)  # Reset buffer position
+                    img = Image.open(img_bytes)  # Reopen after verify
+                except Exception as e:
+                    raise ValueError(f"Image {index} is not a valid image: {str(e)}")
+
+                # Convert to PNG format
+                png_buffer = BytesIO()
+                img.convert("RGBA" if img.mode == "RGBA" else "RGB").save(
+                    png_buffer, format="PNG"
+                )
+                png_buffer.seek(0)
+
+                # Convert PNG to base64 for response
+                png_base64 = base64.b64encode(png_buffer.getvalue()).decode("utf-8")
+                processed_images.append(f"data:image/png;base64,{png_base64}")
+
+                # Upload to Google Cloud Storage
+                png_buffer.seek(0)
+                blob_path = f"{creation_id}/assets/{index}/image.png"
+                blob = bucket.blob(blob_path)
+                blob.upload_from_file(png_buffer, content_type="image/png")
+
+            except Exception as img_error:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to process image {index}: {str(img_error)}",
+                )
+
+        return ImagesResponse(data=processed_images)
 
     except HTTPException:
         raise
@@ -175,7 +234,7 @@ async def set_images(
         raise HTTPException(status_code=500, detail=f"Failed to set images: {str(e)}")
 
 
-@me_router.get("/me/creation/{creation_id}/get_images", response_model=ImagesResponse)
+@me_router.get("/creation/{creation_id}/get_images", response_model=ImagesResponse)
 async def get_images(
     creation_id: str, current_user: Annotated[User, Depends(get_current_active_user)]
 ) -> ImagesResponse:
@@ -195,7 +254,13 @@ async def get_images(
             if not blob.exists():
                 break
 
-            images.append(blob.download_as_bytes())
+            # Download image bytes
+            img_bytes = blob.download_as_bytes()
+
+            # Convert to base64 data URL
+            img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+            images.append(f"data:image/png;base64,{img_base64}")
+
             part_number += 1
 
         if not images:
@@ -211,7 +276,7 @@ async def get_images(
         raise HTTPException(status_code=500, detail=f"Failed to get images: {str(e)}")
 
 
-@me_router.get("/me/creation/{creation_id}/get_video", response_model=VideoResponse)
+@me_router.get("/creation/{creation_id}/get_video", response_model=VideoResponse)
 async def get_video(
     creation_id: str, current_user: Annotated[User, Depends(get_current_active_user)]
 ) -> VideoResponse:
@@ -219,27 +284,55 @@ async def get_video(
     raise HTTPException(status_code=500, detail="This endpoint is not implemented yet!")
 
 
-@me_router.post("/me/creation/generate", response_model=GenerateResponse)
+@me_router.post("/creation/generate", response_model=CreationResponse)
 async def generate_creation(
-    request: GenerateStoryRequest,
     current_user: Annotated[User, Depends(get_current_active_user)],
-) -> GenerateResponse:
+) -> CreationResponse:
     """Generate a new creation."""
-    creation_id: str = str(uuid.uuid4())
+    try:
+        # Initialize clients
+        bigquery_client = bigquery.Client()
 
-    story: str = await generate_story_string(request)
+        # Generate a unique creation ID
+        creation_id = str(uuid.uuid4())
 
-    story_parts: List[str] = await split_story(
-        GenerateStoryRequest(prompt=story, model_type=request.model_type)
-    )
-    await set_story_parts(
-        creation_id=creation_id, story_parts=story_parts, current_user=current_user
-    )
+        # Insert the creation profile
+        query = """
+        INSERT INTO `bai-buchai-p.creations.profiles` (
+            creation_id, title, description, creator_id, user_id, 
+            created_at, updated_at, status, visibility, tags, metadata, is_active
+        )
+        VALUES (
+            @creation_id, 
+            @creation_id,
+            'No description provided',
+            @user_id, 
+            @user_id, 
+            CURRENT_TIMESTAMP(), 
+            CURRENT_TIMESTAMP(), 
+            'draft', 
+            'private', 
+            [], 
+            JSON_OBJECT(), 
+            TRUE
+        )
+        """
 
-    images: List[bytes] = [
-        (await generate_image(ImageGenerationRequest(prompt=story_part))).data
-        for story_part in story_parts
-    ]
-    await set_images(creation_id=creation_id, images=images, current_user=current_user)
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
+                bigquery.ScalarQueryParameter(
+                    "user_id", "STRING", current_user.username
+                ),
+            ]
+        )
 
-    raise HTTPException(status_code=500, detail="This endpoint is not implemented yet!")
+        query_job = bigquery_client.query(query, job_config=job_config)
+        query_job.result()  # Wait for the query to complete
+
+        return CreationResponse(data=creation_id)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate creation: {str(e)}"
+        )
