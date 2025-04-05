@@ -1,8 +1,9 @@
 import base64
 import re
 import uuid
+from datetime import datetime
 from io import BytesIO
-from typing import Annotated, List
+from typing import Annotated, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import bigquery, storage
@@ -22,8 +23,29 @@ class ImageData(BaseModel):
     data: str
 
 
+class CreationProfile(BaseModel):
+    """Model representing a creation profile."""
+
+    creation_id: str
+    title: str
+    description: Optional[str] = None
+    creator_id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+    status: str  # draft, published, archived
+    visibility: str  # public, private
+    tags: List[str]
+    metadata: Optional[Dict] = None
+    is_active: bool
+
+
 class CreationResponse(BaseModel):
     data: str
+
+
+class CreationsResponse(BaseModel):
+    data: List[CreationProfile]
 
 
 class StoryPartsResponse(BaseModel):
@@ -42,17 +64,17 @@ class GenerateResponse(BaseModel):
     data: HttpUrl
 
 
-@me_router.get("/creations", response_model=List[str])
+@me_router.get("/creations", response_model=CreationsResponse)
 async def get_user_creations(
     current_user: Annotated[User, Depends(get_current_active_user)],
-) -> List[str]:
-    """Get all creation IDs for the current user."""
+) -> CreationsResponse:
+    """Get all creations for the current user."""
     # Initialize BigQuery client
     client = bigquery.Client()
 
     try:
         query = """
-        SELECT creation_id
+        SELECT *
         FROM `bai-buchai-p.creations.profiles`
         WHERE user_id = @user_id
         ORDER BY created_at DESC
@@ -69,7 +91,25 @@ async def get_user_creations(
         query_job = client.query(query, job_config=job_config)
         results = query_job.result()
 
-        return [row.creation_id for row in results]
+        creations = []
+        for row in results:
+            creation = CreationProfile(
+                creation_id=row.creation_id,
+                title=row.title,
+                description=row.description,
+                creator_id=row.creator_id,
+                user_id=row.user_id,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+                status=row.status,
+                visibility=row.visibility,
+                tags=row.tags,
+                metadata=row.metadata,
+                is_active=row.is_active,
+            )
+            creations.append(creation)
+
+        return CreationsResponse(data=creations)
 
     except Exception as e:
         raise HTTPException(
@@ -335,4 +375,75 @@ async def generate_creation(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate creation: {str(e)}"
+        )
+
+
+@me_router.delete("/creation/{creation_id}/delete", response_model=CreationResponse)
+async def delete_creation(
+    creation_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> CreationResponse:
+    """Delete a creation and all its associated data."""
+    try:
+        # Initialize clients
+        bigquery_client = bigquery.Client()
+        storage_client = storage.Client()
+
+        # First, verify the creation belongs to the user
+        verify_query = """
+        SELECT creation_id
+        FROM `bai-buchai-p.creations.profiles`
+        WHERE creation_id = @creation_id
+        AND user_id = @user_id
+        """
+
+        verify_job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
+                bigquery.ScalarQueryParameter(
+                    "user_id", "STRING", current_user.username
+                ),
+            ]
+        )
+
+        verify_job = bigquery_client.query(verify_query, verify_job_config)
+        if not list(verify_job.result()):
+            raise HTTPException(
+                status_code=404,
+                detail="Creation not found or you don't have permission to delete it",
+            )
+
+        # Delete from BigQuery
+        delete_query = """
+        DELETE FROM `bai-buchai-p.creations.profiles`
+        WHERE creation_id = @creation_id
+        AND user_id = @user_id
+        """
+
+        delete_job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
+                bigquery.ScalarQueryParameter(
+                    "user_id", "STRING", current_user.username
+                ),
+            ]
+        )
+
+        delete_job = bigquery_client.query(delete_query, delete_job_config)
+        delete_job.result()  # Wait for the query to complete
+
+        # Delete from Google Cloud Storage
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blobs = bucket.list_blobs(prefix=f"{creation_id}/")
+        for blob in blobs:
+            blob.delete()
+
+        return CreationResponse(data=creation_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete creation: {str(e)}",
         )
