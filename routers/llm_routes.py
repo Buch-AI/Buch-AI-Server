@@ -132,6 +132,9 @@ class HuggingFaceRouterService(LlmRouterService):
             text = response.choices[0].message.content
             parts = text.split("[SPLIT]")
 
+            # Strip newlines and limit parts
+            parts = [part.strip() for part in parts]
+
             # TODO: Set the upper limit of parts to 4
             return parts[:4]
         except Exception as e:
@@ -227,6 +230,9 @@ class VertexAiRouterService(LlmRouterService):
             # Parse the response into title and content
             text = response.text
             parts = text.split("[SPLIT]")
+
+            # Strip newlines and limit parts
+            parts = [part.strip() for part in parts]
 
             # TODO: Set the upper limit of parts to 4
             return parts[:4]
