@@ -1,6 +1,7 @@
 import logging
 import os
 from abc import ABC, abstractmethod
+from traceback import format_exc
 from typing import AsyncGenerator, List, Literal
 
 import vertexai
@@ -22,6 +23,10 @@ load_dotenv()
 # TODO: Depending on which provider is avaiable, switch.
 # Global LLM provider setting
 LLM_PROVIDER: Literal["huggingface", "vertexai"] = "vertexai"
+
+# Configure logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 
 class GenerateStoryRequest(BaseModel):
@@ -84,7 +89,9 @@ class HuggingFaceRouterService(LlmRouterService):
             )
             return response.choices[0].message.content
         except Exception as e:
-            logging.error(f"Error generating story with HuggingFace: {str(e)}")
+            logger.error(
+                f"Error generating story with HuggingFace: {str(e)}\n{format_exc()}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             )
@@ -110,7 +117,9 @@ class HuggingFaceRouterService(LlmRouterService):
                 if "choices" in chunk and chunk.choices:
                     yield chunk.choices[0].delta.content or ""
         except Exception as e:
-            logging.error(f"Error streaming story with HuggingFace: {str(e)}")
+            logger.error(
+                f"Error streaming story with HuggingFace: {str(e)}\n{format_exc()}"
+            )
             raise HTTPException(status_code=500, detail=str(e))
 
     async def split_story(self, request: GenerateStoryRequest) -> List[str]:
@@ -138,7 +147,9 @@ class HuggingFaceRouterService(LlmRouterService):
             # TODO: Set the upper limit of parts to 4
             return parts[:4]
         except Exception as e:
-            logging.error(f"Error splitting story with HuggingFace: {str(e)}")
+            logger.error(
+                f"Error splitting story with HuggingFace: {str(e)}\n{format_exc()}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             )
@@ -172,7 +183,9 @@ class VertexAiRouterService(LlmRouterService):
             )
             return response.text
         except Exception as e:
-            logging.error(f"Error generating story with Vertex AI: {str(e)}")
+            logger.error(
+                f"Error generating story with Vertex AI: {str(e)}\n{format_exc()}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             )
@@ -203,7 +216,9 @@ class VertexAiRouterService(LlmRouterService):
             for chunk in response:
                 yield chunk.text
         except Exception as e:
-            logging.error(f"Error streaming story with Vertex AI: {str(e)}")
+            logger.error(
+                f"Error streaming story with Vertex AI: {str(e)}\n{format_exc()}"
+            )
             raise HTTPException(status_code=500, detail=str(e))
 
     async def split_story(self, request: GenerateStoryRequest) -> List[str]:
@@ -237,7 +252,9 @@ class VertexAiRouterService(LlmRouterService):
             # TODO: Set the upper limit of parts to 4
             return parts[:4]
         except Exception as e:
-            logging.error(f"Error splitting story with Vertex AI: {str(e)}")
+            logger.error(
+                f"Error splitting story with Vertex AI: {str(e)}\n{format_exc()}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             )

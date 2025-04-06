@@ -1,6 +1,13 @@
+import logging
+from traceback import format_exc
+
 from fastapi import APIRouter, HTTPException
 from google.cloud import bigquery
 from pydantic import BaseModel
+
+# Configure logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 
 # Define a Pydantic model for the request
@@ -25,4 +32,5 @@ async def database_query(request: DatabaseQueryRequest):
         return {"data": rows}
 
     except Exception as e:
+        logger.error(f"Database query error: {str(e)}\n{format_exc()}")
         raise HTTPException(status_code=400, detail=str(e))

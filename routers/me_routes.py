@@ -1,8 +1,10 @@
 import base64
+import logging
 import re
 import uuid
 from datetime import datetime
 from io import BytesIO
+from traceback import format_exc
 from typing import Annotated, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +14,10 @@ from pydantic import BaseModel
 
 from models.video_generator import VideoGenerator
 from routers.auth_routes import User, get_current_active_user
+
+# Configure logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 # Create a router for user-specific operations
 me_router = APIRouter()
@@ -113,6 +119,7 @@ async def get_user_creations(
         return CreationsResponse(data=creations)
 
     except Exception as e:
+        logger.error(f"Failed to fetch user creations: {str(e)}\n{format_exc()}")
         raise HTTPException(
             status_code=500, detail=f"Failed to fetch user creations: {str(e)}"
         )
@@ -176,6 +183,9 @@ async def get_story_parts(
             part_number += 1
 
         if not story_parts:
+            logger.error(
+                f"No story parts found for creation {creation_id}\n{format_exc()}"
+            )
             raise HTTPException(
                 status_code=404, detail="No story parts found for this creation"
             )
@@ -185,6 +195,7 @@ async def get_story_parts(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to get story parts: {str(e)}\n{format_exc()}")
         raise HTTPException(
             status_code=500, detail=f"Failed to get story parts: {str(e)}"
         )
@@ -262,6 +273,9 @@ async def set_images(
                 blob.upload_from_file(png_buffer, content_type="image/png")
 
             except Exception as img_error:
+                logger.error(
+                    f"Failed to process image {index}: {str(img_error)}\n{format_exc()}"
+                )
                 raise HTTPException(
                     status_code=400,
                     detail=f"Failed to process image {index}: {str(img_error)}",
@@ -272,6 +286,7 @@ async def set_images(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to set images: {str(e)}\n{format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to set images: {str(e)}")
 
 
@@ -305,6 +320,7 @@ async def get_images(
             part_number += 1
 
         if not images:
+            logger.error(f"No images found for creation {creation_id}\n{format_exc()}")
             raise HTTPException(
                 status_code=404, detail="No images found for this creation"
             )
@@ -314,6 +330,7 @@ async def get_images(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to get images: {str(e)}\n{format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to get images: {str(e)}")
 
 
@@ -332,6 +349,7 @@ async def get_video(
         video_blob = bucket.blob(video_blob_path)
 
         if not video_blob.exists():
+            logger.error(f"No video found for creation {creation_id}\n{format_exc()}")
             raise HTTPException(
                 status_code=404, detail="No video found for this creation"
             )
@@ -347,6 +365,7 @@ async def get_video(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to get video: {str(e)}\n{format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to get video: {str(e)}")
 
 
@@ -386,6 +405,9 @@ async def generate_video(
             part_number += 1
 
         if not story_parts or not images:
+            logger.error(
+                f"No story parts or images found for creation {creation_id}\n{format_exc()}"
+            )
             raise HTTPException(
                 status_code=404,
                 detail="No story parts or images found for this creation",
@@ -409,6 +431,7 @@ async def generate_video(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to generate video: {str(e)}\n{format_exc()}")
         raise HTTPException(
             status_code=500, detail=f"Failed to generate video: {str(e)}"
         )
@@ -463,6 +486,7 @@ async def generate_creation(
         return CreationResponse(data=creation_id)
 
     except Exception as e:
+        logger.error(f"Failed to generate creation: {str(e)}\n{format_exc()}")
         raise HTTPException(
             status_code=500, detail=f"Failed to generate creation: {str(e)}"
         )
@@ -498,6 +522,9 @@ async def delete_creation(
 
         verify_job = bigquery_client.query(verify_query, verify_job_config)
         if not list(verify_job.result()):
+            logger.error(
+                f"Creation {creation_id} not found or unauthorized\n{format_exc()}"
+            )
             raise HTTPException(
                 status_code=404,
                 detail="Creation not found or you don't have permission to delete it",
@@ -533,6 +560,7 @@ async def delete_creation(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to delete creation: {str(e)}\n{format_exc()}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to delete creation: {str(e)}",

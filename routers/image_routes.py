@@ -1,10 +1,15 @@
 import logging
 from base64 import b64encode
+from traceback import format_exc
 from urllib.parse import quote
 
 import requests
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
+
+# Configure logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 # Create a router for image generation
 image_router = APIRouter()
@@ -40,6 +45,9 @@ async def generate_image(request: ImageGenerationRequest) -> ImageGenerationResp
         # Verify content type is an image
         content_type = response.headers.get("content-type", "")
         if not content_type.startswith("image/"):
+            logger.error(
+                f"Invalid content type received: {content_type}\n{format_exc()}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Response from image service was not an image",
@@ -51,13 +59,13 @@ async def generate_image(request: ImageGenerationRequest) -> ImageGenerationResp
         return ImageGenerationResponse(data=base64_data, content_type=content_type)
 
     except requests.RequestException as e:
-        logging.error(f"Error downloading image: {str(e)}")
+        logger.error(f"Error downloading image: {str(e)}\n{format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to download image: {str(e)}",
         )
     except Exception as e:
-        logging.error(f"Error generating image: {str(e)}")
+        logger.error(f"Error generating image: {str(e)}\n{format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )

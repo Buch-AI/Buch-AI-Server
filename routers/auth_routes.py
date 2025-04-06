@@ -1,5 +1,7 @@
+import logging
 import os
 from datetime import datetime, timedelta, timezone
+from traceback import format_exc
 from typing import Annotated
 
 import jwt
@@ -12,6 +14,10 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 # Create a router for authentication operations
 auth_router = APIRouter()
@@ -110,12 +116,15 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if username is None:
+            logger.error(f"No username found in token\n{format_exc()}")
             raise credentials_exception
         token_data = TokenData(username=username)
     except InvalidTokenError:
+        logger.error(f"Invalid token error\n{format_exc()}")
         raise credentials_exception
     user = await get_user(token_data.username)
     if user is None:
+        logger.error(f"User not found: {token_data.username}\n{format_exc()}")
         raise credentials_exception
     return user
 
@@ -124,6 +133,9 @@ async def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     if current_user.disabled:
+        logger.error(
+            f"Inactive user attempted access: {current_user.username}\n{format_exc()}"
+        )
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
@@ -134,6 +146,9 @@ async def login_for_access_token(
 ) -> Token:
     user = await authenticate_user(form_data.username, form_data.password)
     if not user:
+        logger.error(
+            f"Failed login attempt for user: {form_data.username}\n{format_exc()}"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
