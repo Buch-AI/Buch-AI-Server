@@ -8,9 +8,10 @@ from typing import Annotated, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import bigquery, storage
 from PIL import Image
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
-from .auth_routes import User, get_current_active_user
+from models.video_generator import VideoGenerator
+from routers.auth_routes import User, get_current_active_user
 
 # Create a router for user-specific operations
 me_router = APIRouter()
@@ -57,11 +58,11 @@ class ImagesResponse(BaseModel):
 
 
 class VideoResponse(BaseModel):
-    data: HttpUrl
+    data: str  # Base64 encoded video
 
 
 class GenerateResponse(BaseModel):
-    data: HttpUrl
+    data: str  # Base64 encoded video
 
 
 @me_router.get("/creations", response_model=CreationsResponse)
@@ -320,8 +321,97 @@ async def get_images(
 async def get_video(
     creation_id: str, current_user: Annotated[User, Depends(get_current_active_user)]
 ) -> VideoResponse:
-    """Get video URL for a specific creation."""
-    raise HTTPException(status_code=500, detail="This endpoint is not implemented yet!")
+    """Get video for a specific creation."""
+    try:
+        # Initialize client
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(BUCKET_NAME)
+
+        # Get video blob
+        video_blob_path = f"{creation_id}/assets/video.mp4"
+        video_blob = bucket.blob(video_blob_path)
+
+        if not video_blob.exists():
+            raise HTTPException(
+                status_code=404, detail="No video found for this creation"
+            )
+
+        # Download video bytes
+        video_bytes = video_blob.download_as_bytes()
+
+        # Convert to base64
+        video_base64 = base64.b64encode(video_bytes).decode("utf-8")
+
+        return VideoResponse(data=f"data:video/mp4;base64,{video_base64}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get video: {str(e)}")
+
+
+@me_router.get("/creation/{creation_id}/generate_video", response_model=VideoResponse)
+async def generate_video(
+    creation_id: str, current_user: Annotated[User, Depends(get_current_active_user)]
+) -> VideoResponse:
+    """Generate a video for a specific creation."""
+    try:
+        # Initialize client
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(BUCKET_NAME)
+
+        # Get story parts and images
+        story_parts = []
+        images = []
+        part_number = 1
+
+        while True:
+            # Check for story part
+            story_blob_path = f"{creation_id}/assets/{part_number}/story.txt"
+            story_blob = bucket.blob(story_blob_path)
+
+            # Check for image
+            image_blob_path = f"{creation_id}/assets/{part_number}/image.png"
+            image_blob = bucket.blob(image_blob_path)
+
+            if not (story_blob.exists() and image_blob.exists()):
+                break
+
+            # Get story part
+            story_parts.append(story_blob.download_as_text())
+
+            # Get image bytes
+            images.append(image_blob.download_as_bytes())
+
+            part_number += 1
+
+        if not story_parts or not images:
+            raise HTTPException(
+                status_code=404,
+                detail="No story parts or images found for this creation",
+            )
+
+        # Generate video using VideoGenerator
+        video_bytes = VideoGenerator.create_video_from_assets(
+            images=images, captions=story_parts
+        )
+
+        # Upload video to Google Cloud Storage
+        video_blob_path = f"{creation_id}/assets/video.mp4"
+        video_blob = bucket.blob(video_blob_path)
+        video_blob.upload_from_string(video_bytes, content_type="video/mp4")
+
+        # Convert to base64
+        video_base64 = base64.b64encode(video_bytes).decode("utf-8")
+
+        return VideoResponse(data=f"data:video/mp4;base64,{video_base64}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate video: {str(e)}"
+        )
 
 
 @me_router.post("/creation/generate", response_model=CreationResponse)

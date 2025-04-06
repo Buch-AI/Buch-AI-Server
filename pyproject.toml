@@ -25,6 +25,8 @@ dependencies = [
     "httpx>=0.28.1",
     "google-cloud-aiplatform>=1.86.0",
     "pillow>=11.1.0",
+    "moviepy>=1.0.3",
+    "numpy>=2.2.4",
 ]
 
 [dependency-groups]
