@@ -9,6 +9,19 @@ RUN apt-get update && \
 # Configure ImageMagick path
 ENV MAGICK_HOME=/usr
 
+# Configure ImageMagick policy to allow text operations
+RUN sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@\*"/' /etc/ImageMagick-6/policy.xml && \
+    sed -i 's/rights="none" pattern="PS"/rights="read|write" pattern="PS"/' /etc/ImageMagick-6/policy.xml && \
+    sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml && \
+    sed -i 's/rights="none" pattern="XPS"/rights="read|write" pattern="XPS"/' /etc/ImageMagick-6/policy.xml
+
+# Set proper permissions for ImageMagick and temporary directories
+RUN chmod 777 /tmp && \
+    chmod 644 /etc/ImageMagick-6/policy.xml && \
+    chmod -R 755 /usr/lib/x86_64-linux-gnu/ImageMagick* || true && \
+    mkdir -p /tmp/magick && \
+    chmod 777 /tmp/magick
+
 # Define build arguments
 ARG AUTH_JWT_KEY
 ARG HF_API_KEY
