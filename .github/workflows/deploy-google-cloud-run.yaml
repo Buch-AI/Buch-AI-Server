@@ -48,9 +48,10 @@ jobs:
             .
           
           # Build task image: Video Generator
+          cd tasks/video_generator
           docker build -t $TASK_VG_IMAGE_TAG --platform linux/amd64 \
-            -f tasks/video_generator/Dockerfile \
             .
+          cd ../../
 
       - name: 📤 Push Docker images
         env:
