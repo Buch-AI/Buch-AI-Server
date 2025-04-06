@@ -3,8 +3,11 @@ ENV PYTHONUNBUFFERED True
 
 # Install system dependencies including ImageMagick for MoviePy
 RUN apt-get update && \
-    apt-get install -y imagemagick && \
+    apt-get install -y imagemagick libmagickwand-dev && \
     rm -rf /var/lib/apt/lists/*
+
+# Configure ImageMagick path
+ENV MAGICK_HOME=/usr
 
 # Define build arguments
 ARG AUTH_JWT_KEY
