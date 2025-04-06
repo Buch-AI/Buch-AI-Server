@@ -12,7 +12,7 @@ from google.cloud import bigquery, storage
 from PIL import Image
 from pydantic import BaseModel
 
-from models.video_generator import VideoGenerator
+from models.video_generator import VideoGenerator, VideoSlide
 from routers.auth_routes import User, get_current_active_user
 
 # Configure logging
@@ -380,8 +380,7 @@ async def generate_video(
         bucket = storage_client.bucket(BUCKET_NAME)
 
         # Get story parts and images
-        story_parts = []
-        images = []
+        slides = []
         part_number = 1
 
         while True:
@@ -396,15 +395,17 @@ async def generate_video(
             if not (story_blob.exists() and image_blob.exists()):
                 break
 
-            # Get story part
-            story_parts.append(story_blob.download_as_text())
+            # Get story part and image
+            story_text = story_blob.download_as_text().strip()
+            image_bytes = image_blob.download_as_bytes()
 
-            # Get image bytes
-            images.append(image_blob.download_as_bytes())
+            # Create VideoSlide with single caption
+            slide = VideoSlide(image=image_bytes, captions=[story_text])
+            slides.append(slide)
 
             part_number += 1
 
-        if not story_parts or not images:
+        if not slides:
             logger.error(
                 f"No story parts or images found for creation {creation_id}\n{format_exc()}"
             )
@@ -414,9 +415,7 @@ async def generate_video(
             )
 
         # Generate video using VideoGenerator
-        video_bytes = VideoGenerator.create_video_from_assets(
-            images=images, captions=story_parts
-        )
+        video_bytes = VideoGenerator.create_video_from_slides(slides=slides)
 
         # Upload video to Google Cloud Storage
         video_blob_path = f"{creation_id}/assets/video.mp4"

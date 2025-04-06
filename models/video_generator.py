@@ -17,8 +17,18 @@ from moviepy.editor import (
     concatenate_videoclips,
 )
 from PIL import Image
+from pydantic import BaseModel, Field
 
-from config import ASSETS_DIR
+from config import ASSETS_P_DIR
+
+
+class VideoSlide(BaseModel):
+    """Model representing a single slide in the video."""
+
+    image: bytes = Field(..., description="Raw bytes of the image")
+    captions: List[str] = Field(
+        ..., min_items=1, description="List of captions to show sequentially"
+    )
 
 
 def get_imagemagick_binary() -> Optional[str]:
@@ -82,62 +92,97 @@ class VideoGenerator:
     """Handles video generation from images and text using MoviePy."""
 
     # Define audio path using the centrally configured assets directory
-    AUDIO_PATH = os.path.join(ASSETS_DIR, "sample-audio.mp3")
+    SAMPLE_AUDIO_PATH = os.path.join(ASSETS_P_DIR, "sample-audio.mp3")
 
     @staticmethod
-    def create_video_from_assets(
-        images: List[bytes],
-        captions: List[str],
-        duration_per_slide: int = 5,
-        font_size: int = 30,
-        font_color: str = "white",
-        audio_volume: float = 0.5,
-    ) -> bytes:
+    def create_video_from_slides(slides: List[VideoSlide]) -> bytes:
         """
-        Create a video from a list of images and captions with background audio.
+        Create a video from a list of VideoSlide objects, each containing an image and multiple captions.
 
         Args:
-            images: List of image bytes
-            captions: List of text captions
-            duration_per_slide: Duration for each slide in seconds
-            font_size: Font size for captions
-            font_color: Font color for captions
-            audio_volume: Volume of background audio (0.0 to 1.0)
+            slides: List of VideoSlide objects, each containing an image and its captions
 
         Returns:
             bytes: The generated video as bytes
         """
-        if len(images) != len(captions):
-            raise ValueError("Number of images must match number of captions")
+        # Video generation constants
+        DURATION_PER_SLIDE = 5  # seconds
+        AUDIO_VOLUME = 0.5
+        FONT_SIZE = 18
+        FONT_COLOR = "white"
+        FONT_NAME = str(
+            os.path.join(ASSETS_P_DIR, "Fredoka-VariableFont_wdth,wght.ttf")
+        )
+        CAPTION_BG_COLOR = "#000a"  # (R,G,B,A)
+        VIDEO_FPS = 24
+        VIDEO_CODEC = "libx264"
+        AUDIO_CODEC = "aac"
+
+        if not slides:
+            raise ValueError("No slides provided")
 
         clips = []
 
-        for img_bytes, caption in zip(images, captions):
+        for slide in slides:
             # Convert image bytes to PIL Image
-            img = Image.open(BytesIO(img_bytes))
+            img = Image.open(BytesIO(slide.image))
 
             # Create image clip
             img_clip = ImageClip(numpy.array(img))
 
-            # Create text clip
-            txt_clip = TextClip(
-                caption,
-                fontsize=font_size,
-                color=font_color,
-                bg_color="black",
-                method="caption",
-                size=(img.width, None),
-                font="FreeSans",
-            )
+            # Calculate duration for each caption
+            caption_duration = DURATION_PER_SLIDE / len(slide.captions)
 
-            # Position text at bottom of image
-            txt_clip = txt_clip.set_position(("center", "bottom"))
+            # Create clips for each caption
+            caption_clips = []
+            for idx, caption in enumerate(slide.captions):
+                # Create shadow text clip
+                shadow_clip = TextClip(
+                    caption,
+                    fontsize=FONT_SIZE,
+                    color="black",
+                    method="caption",
+                    size=(img.width, None),
+                    font=FONT_NAME,
+                )
+                # Offset shadow slightly down and right
+                shadow_clip = shadow_clip.set_position(
+                    ("center", "bottom")
+                ).set_opacity(0.8)
+                shadow_clip = shadow_clip.margin(
+                    top=2, left=2
+                )  # Offset for shadow effect
 
-            # Combine image and text
-            composite = CompositeVideoClip([img_clip, txt_clip])
+                # Create main text clip
+                text_clip = TextClip(
+                    caption,
+                    fontsize=FONT_SIZE,
+                    color=FONT_COLOR,
+                    bg_color=CAPTION_BG_COLOR,
+                    method="caption",
+                    size=(img.width, None),
+                    font=FONT_NAME,
+                )
 
-            # Set duration
-            composite = composite.set_duration(duration_per_slide)
+                # Position text at bottom of image
+                text_clip = text_clip.set_position(("center", "bottom"))
+
+                # Set timing for both clips
+                start_time = idx * caption_duration
+                shadow_clip = shadow_clip.set_start(start_time).set_duration(
+                    caption_duration
+                )
+                text_clip = text_clip.set_start(start_time).set_duration(
+                    caption_duration
+                )
+
+                caption_clips.extend([shadow_clip, text_clip])
+
+            # Combine image and all text clips
+            composite = CompositeVideoClip([img_clip] + caption_clips)
+
+            # Set duration for the entire slide
+            composite = composite.set_duration(DURATION_PER_SLIDE)
 
             clips.append(composite)
 
@@ -146,7 +191,7 @@ class VideoGenerator:
         total_duration = final_clip.duration
 
         # Load and prepare audio
-        audio = AudioFileClip(VideoGenerator.AUDIO_PATH)
+        audio = AudioFileClip(VideoGenerator.SAMPLE_AUDIO_PATH)
 
         # Loop audio if video is longer than audio
         if total_duration > audio.duration:
@@ -157,7 +202,7 @@ class VideoGenerator:
         audio = audio.set_duration(total_duration)
 
         # Set audio volume
-        audio = audio.volumex(audio_volume)
+        audio = audio.volumex(AUDIO_VOLUME)
 
         # Add audio to final clip
         final_clip = final_clip.set_audio(audio)
@@ -171,9 +216,9 @@ class VideoGenerator:
             # Write to temporary file
             final_clip.write_videofile(
                 temp_output_path,
-                codec="libx264",
-                audio_codec="aac",  # Use AAC codec for audio
-                fps=24,
+                codec=VIDEO_CODEC,
+                audio_codec=AUDIO_CODEC,
+                fps=VIDEO_FPS,
             )
 
             # Read the temporary file into bytes
