@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 # Create a router for image generation
 image_router = APIRouter()
 
-POLLINATIONS_IMAGE_URL = "https://image.pollinations.ai/prompt/{prompt}"
+POLLINATIONS_IMAGE_URL = (
+    "https://image.pollinations.ai/prompt/{prompt}?width=512&height=512"
+)
 
 
 class ImageGenerationRequest(BaseModel):
