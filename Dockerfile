@@ -6,6 +6,7 @@ RUN apt-get update && \
     apt-get install -y \
     imagemagick \
     libmagickwand-dev \
+    ffmpeg \
     fonts-freefont-ttf \
     fontconfig && \
     rm -rf /var/lib/apt/lists/*

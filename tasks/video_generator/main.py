@@ -1,3 +1,4 @@
+import logging
 import os
 import platform
 import subprocess
@@ -5,8 +6,10 @@ import tempfile
 import uuid
 from io import BytesIO
 from typing import List, Optional
+from urllib.parse import urlparse
 
 import numpy
+from google.cloud import storage
 from moviepy.config import change_settings
 from moviepy.editor import (
     AudioFileClip,
@@ -21,16 +24,13 @@ from moviepy.video.fx.fadeout import fadeout
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from config import ASSETS_P_DIR
+from config import ASSETS_P_DIR, GCLOUD_CREATIONS_STB_NAME
 
-
-class VideoSlide(BaseModel):
-    """Model representing a single slide in the video."""
-
-    image: bytes = Field(..., description="Raw bytes of the image")
-    captions: List[str] = Field(
-        ..., min_items=1, description="List of captions to show sequentially"
-    )
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 def get_imagemagick_binary() -> Optional[str]:
@@ -90,11 +90,191 @@ if imagemagick_binary is None:
 change_settings({"IMAGEMAGICK_BINARY": imagemagick_binary})
 
 
+class VideoSlide(BaseModel):
+    """Model representing a single slide in the video."""
+
+    image: bytes = Field(..., description="Raw bytes of the image")
+    captions: List[str] = Field(
+        ..., min_items=1, description="List of captions to show sequentially"
+    )
+
+
 class VideoGenerator:
     """Handles video generation from images and text using MoviePy."""
 
     # Define audio path using the centrally configured assets directory
     SAMPLE_AUDIO_PATH = os.path.join(ASSETS_P_DIR, "sample-audio.mp3")
+
+    @staticmethod
+    def _is_gcs_path(path: str) -> bool:
+        """Check if a path is a Google Cloud Storage URL."""
+        return path.startswith("gs://")
+
+    @staticmethod
+    def _parse_gcs_path(gcs_path: str) -> tuple[str, str]:
+        """Parse a GCS path into bucket and blob path."""
+        parsed = urlparse(gcs_path)
+        if not parsed.netloc:
+            raise ValueError(f"Invalid GCS path: {gcs_path}")
+        return parsed.netloc, parsed.path.lstrip("/")
+
+    @staticmethod
+    def _read_file_from_gcs(bucket_name: str, blob_path: str) -> bytes:
+        """Read a file from Google Cloud Storage."""
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_path)
+        return blob.download_as_bytes()
+
+    @staticmethod
+    def _list_gcs_directory(bucket_name: str, prefix: str) -> List[str]:
+        """List contents of a GCS directory."""
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+        blobs = bucket.list_blobs(prefix=prefix)
+        return [blob.name for blob in blobs]
+
+    @classmethod
+    def load_assets_from_directory(cls, directory_path: str) -> List[VideoSlide]:
+        """Load images and their corresponding captions from a directory.
+
+        Supports both local filesystem and Google Cloud Storage paths (gs://).
+
+        Expected directory structure (both local and GCS):
+        directory/
+            ├── 1/
+            │   ├── image.jpg
+            │   ├── 1.txt
+            │   ├── 2.txt
+            │   └── ...
+            ├── 2/
+            │   ├── image.jpg
+            │   ├── 1.txt
+            │   ├── 2.txt
+            │   └── ...
+            └── ...
+
+        Args:
+            directory_path: Local path or GCS URL (gs://) to the assets directory
+
+        Returns:
+            List[VideoSlide]: List of VideoSlide objects containing images and captions
+
+        Raises:
+            ValueError: If directory structure is invalid or required files are missing
+        """
+        is_gcs = cls._is_gcs_path(directory_path)
+        slides = []
+
+        if is_gcs:
+            bucket_name, prefix = cls._parse_gcs_path(directory_path)
+            all_paths = cls._list_gcs_directory(bucket_name, prefix)
+
+            # Group files by slide number
+            slide_files = {}
+            for path in all_paths:
+                # Extract slide number from path
+                rel_path = path[len(prefix) :].lstrip("/")
+                parts = rel_path.split("/")
+                if len(parts) != 2:  # Should be "slide_num/filename"
+                    continue
+
+                slide_num, filename = parts
+                if slide_num not in slide_files:
+                    slide_files[slide_num] = []
+                slide_files[slide_num].append(filename)
+
+            # Process each slide
+            for slide_num in sorted(slide_files.keys()):
+                files = slide_files[slide_num]
+
+                # Find image file
+                image_files = [
+                    f
+                    for f in files
+                    if f.lower().endswith((".png", ".jpg", ".jpeg"))
+                    and os.path.splitext(f.lower())[0] == "image"
+                ]
+
+                if not image_files:
+                    raise ValueError(f"No image file found in slide {slide_num}")
+                if len(image_files) > 1:
+                    raise ValueError(f"Multiple image files found in slide {slide_num}")
+
+                # Load image
+                image_path = f"{prefix.rstrip('/')}/{slide_num}/{image_files[0]}"
+                image_bytes = cls._read_file_from_gcs(bucket_name, image_path)
+
+                # Load captions
+                caption_files = sorted([f for f in files if f.lower().endswith(".txt")])
+                if not caption_files:
+                    raise ValueError(f"No caption files found in slide {slide_num}")
+
+                captions = []
+                for txt_file in caption_files:
+                    txt_path = f"{prefix.rstrip('/')}/{slide_num}/{txt_file}"
+                    caption_bytes = cls._read_file_from_gcs(bucket_name, txt_path)
+                    caption = caption_bytes.decode("utf-8").strip()
+                    if not caption:
+                        raise ValueError(f"Empty caption file: {txt_path}")
+                    captions.append(caption)
+
+                slides.append(VideoSlide(image=image_bytes, captions=captions))
+
+        else:
+            # Handle local filesystem
+            subdirs = sorted(
+                [
+                    d
+                    for d in os.listdir(directory_path)
+                    if os.path.isdir(os.path.join(directory_path, d))
+                ]
+            )
+
+            if not subdirs:
+                raise ValueError(f"No slide directories found in {directory_path}")
+
+            for subdir in subdirs:
+                subdir_path = os.path.join(directory_path, subdir)
+
+                # Find image file
+                image_files = [
+                    f
+                    for f in os.listdir(subdir_path)
+                    if f.lower().endswith((".png", ".jpg", ".jpeg"))
+                    and os.path.splitext(f.lower())[0] == "image"
+                ]
+
+                if not image_files:
+                    raise ValueError(f"No image file found in {subdir_path}")
+                if len(image_files) > 1:
+                    raise ValueError(f"Multiple image files found in {subdir_path}")
+
+                # Load image
+                img_path = os.path.join(subdir_path, image_files[0])
+                with open(img_path, "rb") as f:
+                    image_bytes = f.read()
+
+                # Load captions
+                caption_files = sorted(
+                    [f for f in os.listdir(subdir_path) if f.lower().endswith(".txt")]
+                )
+
+                if not caption_files:
+                    raise ValueError(f"No caption files found in {subdir_path}")
+
+                captions = []
+                for txt_file in caption_files:
+                    txt_path = os.path.join(subdir_path, txt_file)
+                    with open(txt_path, "r", encoding="utf-8") as f:
+                        caption = f.read().strip()
+                        if not caption:
+                            raise ValueError(f"Empty caption file: {txt_path}")
+                        captions.append(caption)
+
+                slides.append(VideoSlide(image=image_bytes, captions=captions))
+
+        return slides
 
     @staticmethod
     def get_caption_duration(text: str, wpm: int) -> float:
@@ -347,3 +527,39 @@ class VideoGenerator:
             # Clean up temporary file
             if os.path.exists(temp_output_path):
                 os.remove(temp_output_path)
+
+
+if __name__ == "__main__":
+    # This is the entry point when running as a Cloud Run Job
+    import sys
+
+    if len(sys.argv) != 2:
+        logger.error("Usage: python main.py <creation_id>")
+        sys.exit(1)
+
+    creation_id = sys.argv[1]
+
+    try:
+        # Load slides from GCS
+        gcs_path = f"gs://{GCLOUD_CREATIONS_STB_NAME}/{creation_id}/assets"
+        slides = VideoGenerator.load_assets_from_directory(gcs_path)
+
+        if not slides:
+            raise ValueError(f"No valid slides found for creation {creation_id}")
+
+        # Generate video
+        video_bytes = VideoGenerator.create_video_from_slides(slides=slides)
+
+        # Upload to GCS
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+        video_blob_path = f"{creation_id}/assets/video.mp4"
+        video_blob = bucket.blob(video_blob_path)
+        video_blob.upload_from_string(video_bytes, content_type="video/mp4")
+
+    except Exception as e:
+        logger.error(
+            f"Error generating video for creation {creation_id}: {str(e)}",
+            exc_info=True,
+        )
+        raise

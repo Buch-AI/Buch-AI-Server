@@ -1,4 +1,5 @@
 name: Deploy to Google Cloud Run
+
 on:
   push:
     branches:
@@ -35,22 +36,32 @@ jobs:
         run: |
           gcloud auth configure-docker us-east1-docker.pkg.dev --quiet
 
-      - name: 🏗️ Build Docker image
+      - name: 🏗️ Build Docker images
         env:
-          IMAGE_TAG: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0
+          SERVER_IMAGE_TAG: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0
+          TASK_VG_IMAGE_TAG: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-video-generator:0.1.0
         run: |
-          docker build -t $IMAGE_TAG --platform linux/amd64 \
+          # Build server image
+          docker build -t $SERVER_IMAGE_TAG --platform linux/amd64 \
             --build-arg AUTH_JWT_KEY=${{ secrets.AUTH_JWT_KEY }} \
             --build-arg HF_API_KEY=${{ secrets.HF_API_KEY }} \
             .
+          
+          # Build task image: Video Generator
+          docker build -t $TASK_VG_IMAGE_TAG --platform linux/amd64 \
+            -f tasks/video_generator/Dockerfile \
+            .
 
-      - name: 📤 Push Docker image
+      - name: 📤 Push Docker images
         env:
-          IMAGE_TAG: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0
+          SERVER_IMAGE_TAG: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0
+          TASK_VG_IMAGE_TAG: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-video-generator:0.1.0
         run: |
-          docker push $IMAGE_TAG
+          docker push $SERVER_IMAGE_TAG
+          docker push $TASK_VG_IMAGE_TAG
     outputs:
-      image_tag: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0
+      server_image_tag: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0
+      video_gen_image_tag: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-video-generator:0.1.0
 
   deploy:
     needs: build
@@ -69,10 +80,27 @@ jobs:
 
       - name: 🚀 Deploy to Cloud Run
         run: |
+          # Deploy server
           gcloud run deploy bai-buchai-p-run-usea1-server \
             --region us-east1 \
-            --image ${{ needs.build.outputs.image_tag }} \
+            --image ${{ needs.build.outputs.server_image_tag }} \
             --platform managed \
             --allow-unauthenticated \
             --set-env-vars "AUTH_JWT_KEY=${{ secrets.AUTH_JWT_KEY }}" \
             --set-env-vars "HF_API_KEY=${{ secrets.HF_API_KEY }}"
+          
+          # Deploy task: Video Generator
+          gcloud run jobs update buch-ai-video-generator \
+            --image ${{ needs.build.outputs.video_gen_image_tag }} \
+            --region us-east1 \
+            --memory 2Gi \
+            --cpu 2 \
+            --max-retries 2 \
+            --task-timeout 30m \
+            || gcloud run jobs create buch-ai-video-generator \
+               --image ${{ needs.build.outputs.video_gen_image_tag }} \
+               --region us-east1 \
+               --memory 2Gi \
+               --cpu 2 \
+               --max-retries 2 \
+               --task-timeout 30m

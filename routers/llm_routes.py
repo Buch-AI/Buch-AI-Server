@@ -12,7 +12,7 @@ from huggingface_hub import AsyncInferenceClient, InferenceClient
 from pydantic import BaseModel
 from vertexai.generative_models import Content, GenerationConfig, GenerativeModel, Part
 
-from models.llm_config import (
+from models.llm import (
     HuggingFaceConfigManager,
     ModelType,
     VertexAiConfigManager,

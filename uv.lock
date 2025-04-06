@@ -137,6 +137,7 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "google-cloud-aiplatform" },
     { name = "google-cloud-bigquery" },
+    { name = "google-cloud-run" },
     { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "moviepy" },
@@ -164,6 +165,7 @@ requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.95.0" },
     { name = "google-cloud-aiplatform", specifier = ">=1.86.0" },
     { name = "google-cloud-bigquery", specifier = ">=3.11.0" },
+    { name = "google-cloud-run", specifier = ">=0.10.17" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "huggingface-hub", specifier = ">=0.29.2" },
     { name = "moviepy", specifier = ">=1.0.3" },
@@ -519,6 +521,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6e/ca/a4648f5038cb94af4b3942815942a03aa9398f9fb0bef55b3f1585b9940d/google_cloud_resource_manager-1.14.2.tar.gz", hash = "sha256:962e2d904c550d7bac48372607904ff7bb3277e3bb4a36d80cc9a37e28e6eb74", size = 446370 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b1/ea/a92631c358da377af34d3a9682c97af83185c2d66363d5939ab4a1169a7f/google_cloud_resource_manager-1.14.2-py3-none-any.whl", hash = "sha256:d0fa954dedd1d2b8e13feae9099c01b8aac515b648e612834f9942d2795a9900", size = 394344 },
+]
+
+[[package]]
+name = "google-cloud-run"
+version = "0.10.17"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpc-google-iam-v1" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/6d/afafe0fa2eb4cf575acc03aebbba2995f68cab361babbc73d9ab5e780f9a/google_cloud_run-0.10.17.tar.gz", hash = "sha256:efb5413907897f50cc6cb6045f8e185b499d733d066325899a246ad954c9a518", size = 356344 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/a8/4f54d4ad065954e477392abd0c6ca2ace8abeadda75e3102ce313022bc13/google_cloud_run-0.10.17-py3-none-any.whl", hash = "sha256:1f66c50605f3bb62a4b2a8d8fc6cb658bd5ea3a1c5989d33450e55b818b2f027", size = 332050 },
 ]
 
 [[package]]

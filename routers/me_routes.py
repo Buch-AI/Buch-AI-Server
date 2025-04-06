@@ -8,12 +8,14 @@ from traceback import format_exc
 from typing import Annotated, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from google.cloud import bigquery, storage
+from google.cloud import bigquery, run_v2, storage
+from google.cloud.run_v2.types import Job, TaskTemplate
 from PIL import Image
 from pydantic import BaseModel
 
-from models.video_generator import VideoGenerator, VideoSlide
+from config import ENV, GCLOUD_CREATIONS_STB_NAME
 from routers.auth_routes import User, get_current_active_user
+from tasks.video_generator.main import VideoGenerator
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR)
@@ -69,6 +71,13 @@ class VideoResponse(BaseModel):
 
 class GenerateResponse(BaseModel):
     data: str  # Base64 encoded video
+
+
+class TaskStatus(BaseModel):
+    """Model representing a Google Cloud Run Job status."""
+
+    status: str  # pending, running, completed, failed
+    message: Optional[str] = None
 
 
 @me_router.get("/creations", response_model=CreationsResponse)
@@ -133,17 +142,21 @@ async def set_story_parts(
     story_parts: List[str],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> StoryPartsResponse:
-    """Set story parts for a specific creation."""
+    """Set story parts for a specific creation.
+
+    Each story part will be saved as 1.txt in its respective numbered directory
+    to maintain compatibility with VideoGenerator's expected structure.
+    """
     try:
         # Initialize client
         storage_client = storage.Client()
 
         # Get bucket reference
-        bucket = storage_client.bucket(BUCKET_NAME)
+        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
 
-        # Upload each story part
+        # Upload each story part as 1.txt
         for index, story_part in enumerate(story_parts, start=1):
-            blob_path = f"{creation_id}/assets/{index}/story.txt"
+            blob_path = f"{creation_id}/assets/{index}/1.txt"
             blob = bucket.blob(blob_path)
             blob.upload_from_string(story_part)
 
@@ -161,19 +174,23 @@ async def set_story_parts(
 async def get_story_parts(
     creation_id: str, current_user: Annotated[User, Depends(get_current_active_user)]
 ) -> StoryPartsResponse:
-    """Get story parts for a specific creation."""
+    """Get story parts for a specific creation.
+
+    Reads 1.txt from each numbered directory to maintain compatibility with
+    VideoGenerator's expected structure.
+    """
     try:
         # Initialize client
         storage_client = storage.Client()
 
         # Get bucket reference
-        bucket = storage_client.bucket(BUCKET_NAME)
+        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
         story_parts = []
         part_number = 1
 
         # Keep reading parts until we don't find the next one
         while True:
-            blob_path = f"{creation_id}/assets/{part_number}/story.txt"
+            blob_path = f"{creation_id}/assets/{part_number}/1.txt"
             blob = bucket.blob(blob_path)
 
             if not blob.exists():
@@ -211,7 +228,7 @@ async def set_images(
     try:
         # Initialize client
         storage_client = storage.Client()
-        bucket = storage_client.bucket(BUCKET_NAME)
+        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
         processed_images = []
 
         # Upload each image
@@ -298,7 +315,7 @@ async def get_images(
     try:
         # Initialize client
         storage_client = storage.Client()
-        bucket = storage_client.bucket(BUCKET_NAME)
+        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
         images = []
         part_number = 1
 
@@ -342,7 +359,7 @@ async def get_video(
     try:
         # Initialize client
         storage_client = storage.Client()
-        bucket = storage_client.bucket(BUCKET_NAME)
+        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
 
         # Get video blob
         video_blob_path = f"{creation_id}/assets/video.mp4"
@@ -369,63 +386,99 @@ async def get_video(
         raise HTTPException(status_code=500, detail=f"Failed to get video: {str(e)}")
 
 
-@me_router.get("/creation/{creation_id}/generate_video", response_model=VideoResponse)
-async def generate_video(
-    creation_id: str, current_user: Annotated[User, Depends(get_current_active_user)]
-) -> VideoResponse:
-    """Generate a video for a specific creation."""
+@me_router.get(
+    "/creation/{creation_id}/generate_video_status", response_model=TaskStatus
+)
+async def generate_video_status(
+    creation_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> TaskStatus:
+    """Get the status of video generation for a creation."""
     try:
-        # Initialize client
         storage_client = storage.Client()
-        bucket = storage_client.bucket(BUCKET_NAME)
+        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
 
-        # Get story parts and images
-        slides = []
-        part_number = 1
+        # Check if video exists
+        video_blob = bucket.blob(f"{creation_id}/assets/video.mp4")
+        if video_blob.exists():
+            return TaskStatus(status="completed")
 
-        while True:
-            # Check for story part
-            story_blob_path = f"{creation_id}/assets/{part_number}/story.txt"
-            story_blob = bucket.blob(story_blob_path)
+        # Check if job is running (you might want to store this in a database)
+        # For now, we'll just return pending if video doesn't exist
+        return TaskStatus(status="pending")
 
-            # Check for image
-            image_blob_path = f"{creation_id}/assets/{part_number}/image.png"
-            image_blob = bucket.blob(image_blob_path)
+    except Exception as e:
+        logger.error(f"Failed to get video status: {str(e)}\n{format_exc()}")
+        return TaskStatus(status="failed", message=str(e))
 
-            if not (story_blob.exists() and image_blob.exists()):
-                break
 
-            # Get story part and image
-            story_text = story_blob.download_as_text().strip()
-            image_bytes = image_blob.download_as_bytes()
+@me_router.get("/creation/{creation_id}/generate_video", response_model=TaskStatus)
+async def generate_video(
+    creation_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> TaskStatus:
+    """Generate a video for a specific creation.
 
-            # Create VideoSlide with single caption
-            slide = VideoSlide(image=image_bytes, captions=[story_text])
-            slides.append(slide)
+    In production (ENV='p'), this triggers a Cloud Run Job.
+    In development (ENV='d'), this runs the video generation locally.
+    """
+    try:
+        if ENV == "p":
+            # Initialize Cloud Run client
+            client = run_v2.JobsClient()
 
-            part_number += 1
+            parent = "projects/bai-buchai-p/locations/us-east1"
 
-        if not slides:
-            logger.error(
-                f"No story parts or images found for creation {creation_id}\n{format_exc()}"
+            # Create job configuration
+            job = Job(
+                template=TaskTemplate(
+                    containers=[
+                        {
+                            "image": "us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-video-generator:latest",
+                            "args": [creation_id],
+                            "env": [{"name": "ENV", "value": f"{ENV}"}],
+                        }
+                    ]
+                )
             )
-            raise HTTPException(
-                status_code=404,
-                detail="No story parts or images found for this creation",
+
+            # Create and run the job
+            client.create_job(
+                parent=parent, job=job, job_id=f" buch-ai-video-generator-{creation_id}"
             )
 
-        # Generate video using VideoGenerator
-        video_bytes = VideoGenerator.create_video_from_slides(slides=slides)
+            # Return immediate response
+            return TaskStatus(
+                status="pending",
+                message=f"Job started. Check status at /me/creation/{creation_id}/generate_video_status.",
+            )
 
-        # Upload video to Google Cloud Storage
-        video_blob_path = f"{creation_id}/assets/video.mp4"
-        video_blob = bucket.blob(video_blob_path)
-        video_blob.upload_from_string(video_bytes, content_type="video/mp4")
+        else:
+            # Development: Run locally
+            # Use VideoGenerator to load assets directly from GCS
+            gcs_path = f"gs://{GCLOUD_CREATIONS_STB_NAME}/{creation_id}/assets"
+            slides = VideoGenerator.load_assets_from_directory(gcs_path)
 
-        # Convert to base64
-        video_base64 = base64.b64encode(video_bytes).decode("utf-8")
+            if not slides:
+                logger.error(
+                    f"No valid slides found for creation {creation_id}\n{format_exc()}"
+                )
+                raise HTTPException(
+                    status_code=404,
+                    detail="No valid slides found for this creation",
+                )
 
-        return VideoResponse(data=f"data:video/mp4;base64,{video_base64}")
+            # Generate video using VideoGenerator
+            video_bytes = VideoGenerator.create_video_from_slides(slides=slides)
+
+            # Upload video to Google Cloud Storage
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+            video_blob_path = f"{creation_id}/assets/video.mp4"
+            video_blob = bucket.blob(video_blob_path)
+            video_blob.upload_from_string(video_bytes, content_type="video/mp4")
+
+            return TaskStatus(status="completed")
 
     except HTTPException:
         raise
@@ -436,6 +489,7 @@ async def generate_video(
         )
 
 
+# TODO: Rename this.
 @me_router.post("/creation/generate", response_model=CreationResponse)
 async def generate_creation(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -549,7 +603,7 @@ async def delete_creation(
         delete_job.result()  # Wait for the query to complete
 
         # Delete from Google Cloud Storage
-        bucket = storage_client.bucket(BUCKET_NAME)
+        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
         blobs = bucket.list_blobs(prefix=f"{creation_id}/")
         for blob in blobs:
             blob.delete()

@@ -27,6 +27,7 @@ dependencies = [
     "pillow>=11.1.0",
     "moviepy>=1.0.3",
     "numpy>=2.2.4",
+    "google-cloud-run>=0.10.17",
 ]
 
 [dependency-groups]
