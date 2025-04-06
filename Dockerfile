@@ -1,6 +1,11 @@
 FROM python:3.12.9
 ENV PYTHONUNBUFFERED True
 
+# Install system dependencies including ImageMagick for MoviePy
+RUN apt-get update && \
+    apt-get install -y imagemagick && \
+    rm -rf /var/lib/apt/lists/*
+
 # Define build arguments
 ARG AUTH_JWT_KEY
 ARG HF_API_KEY
