@@ -127,6 +127,7 @@ class VideoGenerator:
                 bg_color="black",
                 method="caption",
                 size=(img.width, None),
+                font="FreeSans",
             )
 
             # Position text at bottom of image

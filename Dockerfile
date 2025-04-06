@@ -6,8 +6,7 @@ RUN apt-get update && \
     apt-get install -y \
     imagemagick \
     libmagickwand-dev \
-    fonts-liberation \
-    ttf-mscorefonts-installer \
+    fonts-freefont-ttf \
     fontconfig && \
     rm -rf /var/lib/apt/lists/*
 
@@ -17,20 +16,12 @@ RUN fc-cache -f
 # Configure ImageMagick path
 ENV MAGICK_HOME=/usr
 
-# Configure ImageMagick policy to allow text operations and increase resource limits
-RUN sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@\*"/' /etc/ImageMagick-6/policy.xml && \
-    sed -i 's/rights="none" pattern="PS"/rights="read|write" pattern="PS"/' /etc/ImageMagick-6/policy.xml && \
-    sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml && \
-    sed -i 's/rights="none" pattern="XPS"/rights="read|write" pattern="XPS"/' /etc/ImageMagick-6/policy.xml && \
-    sed -i 's/<policy domain="resource" name="width" value="16KP"/<policy domain="resource" name="width" value="64KP"/' /etc/ImageMagick-6/policy.xml && \
-    sed -i 's/<policy domain="resource" name="height" value="16KP"/<policy domain="resource" name="height" value="64KP"/' /etc/ImageMagick-6/policy.xml && \
-    sed -i 's/<policy domain="resource" name="memory" value="256MiB"/<policy domain="resource" name="memory" value="1GiB"/' /etc/ImageMagick-6/policy.xml && \
-    sed -i 's/<policy domain="resource" name="disk" value="1GiB"/<policy domain="resource" name="disk" value="4GiB"/' /etc/ImageMagick-6/policy.xml
+# Configure ImageMagick policy to allow text operations
+RUN sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@\*"/' /etc/ImageMagick-6/policy.xml
 
 # Set proper permissions for ImageMagick and temporary directories
 RUN chmod 777 /tmp && \
     chmod 644 /etc/ImageMagick-6/policy.xml && \
-    chmod -R 755 /usr/lib/x86_64-linux-gnu/ImageMagick* || true && \
     mkdir -p /tmp/magick && \
     chmod 777 /tmp/magick
 
