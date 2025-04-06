@@ -16,6 +16,8 @@ from moviepy.editor import (
     afx,
     concatenate_videoclips,
 )
+from moviepy.video.fx.fadein import fadein
+from moviepy.video.fx.fadeout import fadeout
 from PIL import Image
 from pydantic import BaseModel, Field
 
@@ -95,6 +97,58 @@ class VideoGenerator:
     SAMPLE_AUDIO_PATH = os.path.join(ASSETS_P_DIR, "sample-audio.mp3")
 
     @staticmethod
+    def get_caption_duration(text: str, wpm: int) -> float:
+        """
+        Calculate the duration needed to read a caption at a given words per minute rate.
+
+        Args:
+            text: The caption text
+            wpm: Words per minute reading speed
+
+        Returns:
+            float: Duration in seconds needed to read the text
+        """
+        # Count words (split by whitespace)
+        word_count = len(text.split())
+
+        # Calculate base duration (words / (words per minute / 60 seconds))
+        base_duration = (word_count / wpm) * 60
+
+        # Add a minimum buffer time of 1.5 seconds for visual comprehension
+        return max(base_duration + 1.5, 2.0)  # Ensure at least 2 seconds per caption
+
+    @staticmethod
+    def get_gradient_background(
+        width: int, height: int, alpha_bottom: float = 0.7, alpha_top: float = 0.0
+    ) -> numpy.ndarray:
+        """
+        Create a gradient background that fades from black to transparent vertically.
+
+        Args:
+            width: Width of the background
+            height: Height of the background
+            alpha_bottom: Starting alpha value at the bottom (0-1)
+            alpha_top: Ending alpha value at the top (0-1)
+
+        Returns:
+            numpy.ndarray: RGBA array representing the gradient background
+        """
+        # Create a vertical gradient of alpha values (reversed to fade upward)
+        alpha_gradient = numpy.linspace(alpha_top, alpha_bottom, height)[
+            :, numpy.newaxis
+        ]
+
+        # Create the RGBA array (black background with varying alpha)
+        gradient = numpy.zeros((height, width, 4))
+        # Set RGB to black (0, 0, 0)
+        gradient[:, :, :3] = 0
+        # Set alpha channel with gradient and scale to 0-255 range
+        gradient[:, :, 3] = numpy.tile(alpha_gradient, (1, width)) * 255
+
+        # Convert to uint8 for proper image handling
+        return gradient.astype(numpy.uint8)
+
+    @staticmethod
     def create_video_from_slides(slides: List[VideoSlide]) -> bytes:
         """
         Create a video from a list of VideoSlide objects, each containing an image and multiple captions.
@@ -106,88 +160,144 @@ class VideoGenerator:
             bytes: The generated video as bytes
         """
         # Video generation constants
-        DURATION_PER_SLIDE = 5  # seconds
         AUDIO_VOLUME = 0.5
+        WORDS_PER_MIN = 200
         FONT_SIZE = 18
         FONT_COLOR = "white"
         FONT_NAME = str(
             os.path.join(ASSETS_P_DIR, "Fredoka-VariableFont_wdth,wght.ttf")
         )
-        CAPTION_BG_COLOR = "#000a"  # (R,G,B,A)
+        CAPTION_PADDING = 40  # Padding from the bottom and sides of the frame
         VIDEO_FPS = 24
         VIDEO_CODEC = "libx264"
         AUDIO_CODEC = "aac"
+        FADE_DURATION = 0.5  # Duration of fade transitions in seconds
 
         if not slides:
             raise ValueError("No slides provided")
 
-        clips = []
+        slide_clips = []
 
         for slide in slides:
             # Convert image bytes to PIL Image
-            img = Image.open(BytesIO(slide.image))
+            image = Image.open(BytesIO(slide.image))
 
             # Create image clip
-            img_clip = ImageClip(numpy.array(img))
+            image_clip = ImageClip(numpy.array(image))
 
-            # Calculate duration for each caption
-            caption_duration = DURATION_PER_SLIDE / len(slide.captions)
+            # Calculate durations for each caption based on text content
+            caption_durations = [
+                VideoGenerator.get_caption_duration(caption, WORDS_PER_MIN)
+                for caption in slide.captions
+            ]
 
-            # Create clips for each caption
             caption_clips = []
-            for idx, caption in enumerate(slide.captions):
+            current_time = 0
+
+            for idx, (caption, duration) in enumerate(
+                zip(slide.captions, caption_durations)
+            ):
+                # Create main text clip first to get its size
+                text_clip = TextClip(
+                    caption,
+                    fontsize=FONT_SIZE,
+                    color=FONT_COLOR,
+                    method="caption",
+                    size=(
+                        image.width - 2 * CAPTION_PADDING,
+                        None,
+                    ),  # Add padding on sides
+                    font=FONT_NAME,
+                )
+
+                # Get text clip size and calculate positions
+                text_height = text_clip.size[1]
+                text_y_pos = (
+                    image.height - text_height - CAPTION_PADDING
+                )  # Add bottom padding
+                gradient_height = int(
+                    text_height * 2
+                )  # Make gradient taller for more fade
+
+                # Create gradient background
+                gradient = VideoGenerator.get_gradient_background(
+                    width=image.width,
+                    height=gradient_height,
+                    alpha_bottom=1.0,  # Fully opaque at bottom
+                    alpha_top=0.0,  # Fully transparent at top
+                )
+
+                # Create gradient clip
+                gradient_clip = ImageClip(gradient)
+
                 # Create shadow text clip
                 shadow_clip = TextClip(
                     caption,
                     fontsize=FONT_SIZE,
                     color="black",
                     method="caption",
-                    size=(img.width, None),
+                    size=(
+                        image.width - 2 * CAPTION_PADDING,
+                        None,
+                    ),  # Add padding on sides
                     font=FONT_NAME,
                 )
-                # Offset shadow slightly down and right
+
+                # Position clips
+                gradient_y_pos = image.height - gradient_height
+                gradient_clip = gradient_clip.set_position(("center", gradient_y_pos))
                 shadow_clip = shadow_clip.set_position(
-                    ("center", "bottom")
+                    ("center", text_y_pos + 2)
                 ).set_opacity(0.8)
-                shadow_clip = shadow_clip.margin(
-                    top=2, left=2
-                )  # Offset for shadow effect
+                text_clip = text_clip.set_position(("center", text_y_pos))
 
-                # Create main text clip
-                text_clip = TextClip(
-                    caption,
-                    fontsize=FONT_SIZE,
-                    color=FONT_COLOR,
-                    bg_color=CAPTION_BG_COLOR,
-                    method="caption",
-                    size=(img.width, None),
-                    font=FONT_NAME,
+                # Set timing for all clips using calculated duration
+                gradient_clip = gradient_clip.set_duration(duration)
+                shadow_clip = shadow_clip.set_duration(duration)
+                text_clip = text_clip.set_duration(duration)
+
+                # Add fade transitions
+                if (
+                    duration > 2 * FADE_DURATION
+                ):  # Only add fades if clip is long enough
+                    gradient_clip = gradient_clip.fx(fadein, FADE_DURATION).fx(
+                        fadeout, FADE_DURATION
+                    )
+                    shadow_clip = shadow_clip.fx(fadein, FADE_DURATION).fx(
+                        fadeout, FADE_DURATION
+                    )
+                    text_clip = text_clip.fx(fadein, FADE_DURATION).fx(
+                        fadeout, FADE_DURATION
+                    )
+
+                # Set start times
+                gradient_clip = gradient_clip.set_start(current_time)
+                shadow_clip = shadow_clip.set_start(current_time)
+                text_clip = text_clip.set_start(current_time)
+
+                current_time += duration
+
+                # Add clips in order: gradient (bottom), shadow (middle), text (top)
+                caption_clips.extend([gradient_clip, shadow_clip, text_clip])
+
+            # Create composite of image and all captions
+            slide_duration = sum(caption_durations)
+            image_clip = image_clip.set_duration(slide_duration)
+            slide_composite = CompositeVideoClip([image_clip] + caption_clips)
+
+            # Add fade transitions between slides
+            if slide_duration > 2 * FADE_DURATION:
+                slide_composite = slide_composite.set_duration(
+                    slide_duration
+                )  # Ensure duration is set
+                slide_composite = slide_composite.fx(fadein, FADE_DURATION).fx(
+                    fadeout, FADE_DURATION
                 )
 
-                # Position text at bottom of image
-                text_clip = text_clip.set_position(("center", "bottom"))
+            slide_clips.append(slide_composite)
 
-                # Set timing for both clips
-                start_time = idx * caption_duration
-                shadow_clip = shadow_clip.set_start(start_time).set_duration(
-                    caption_duration
-                )
-                text_clip = text_clip.set_start(start_time).set_duration(
-                    caption_duration
-                )
-
-                caption_clips.extend([shadow_clip, text_clip])
-
-            # Combine image and all text clips
-            composite = CompositeVideoClip([img_clip] + caption_clips)
-
-            # Set duration for the entire slide
-            composite = composite.set_duration(DURATION_PER_SLIDE)
-
-            clips.append(composite)
-
-        # Concatenate all clips
-        final_clip = concatenate_videoclips(clips)
+        # Concatenate all slides
+        final_clip = concatenate_videoclips(slide_clips, method="compose")
         total_duration = final_clip.duration
 
         # Load and prepare audio
@@ -228,7 +338,7 @@ class VideoGenerator:
             # Close clips to free up resources
             audio.close()
             final_clip.close()
-            for clip in clips:
+            for clip in slide_clips:
                 clip.close()
 
             return video_bytes

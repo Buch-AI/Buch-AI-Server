@@ -28,19 +28,19 @@ class HuggingFaceConfigManager:
         ModelType.LITE: ModelConfig(
             model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
             max_tokens=1024,
-            temperature=0.8,
+            temperature=0.6,
             top_p=0.9,
         ),
         ModelType.STANDARD: ModelConfig(
             model_id="mistralai/Mistral-7B-Instruct-v0.2",
             max_tokens=1024,
-            temperature=0.8,
+            temperature=0.6,
             top_p=0.9,
         ),
         ModelType.PRO: ModelConfig(
             model_id="google/gemma-3-27b-it",
             max_tokens=2048,
-            temperature=0.8,
+            temperature=0.6,
             top_p=0.9,
         ),
     }
@@ -87,9 +87,9 @@ class VertexAiConfigManager:
     # Define preset configurations for different model types
     model_configs: Dict[ModelType, ModelConfig] = {
         ModelType.LITE: ModelConfig(
-            model_id="gemini-1.5-flash",  # Using standard Gemini Pro for instruct
-            max_tokens=2048,
-            temperature=0.7,
+            model_id="gemini-1.5-flash",
+            max_tokens=1024,
+            temperature=0.6,
             top_p=0.9,
         ),
         # Add more configurations as needed
