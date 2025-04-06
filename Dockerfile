@@ -3,8 +3,16 @@ ENV PYTHONUNBUFFERED True
 
 # Install system dependencies including ImageMagick for MoviePy
 RUN apt-get update && \
-    apt-get install -y imagemagick libmagickwand-dev && \
+    apt-get install -y \
+    imagemagick \
+    libmagickwand-dev \
+    fonts-liberation \
+    ttf-mscorefonts-installer \
+    fontconfig && \
     rm -rf /var/lib/apt/lists/*
+
+# Update font cache
+RUN fc-cache -f
 
 # Configure ImageMagick path
 ENV MAGICK_HOME=/usr
