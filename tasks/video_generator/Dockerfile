@@ -20,7 +20,8 @@ ENV MAGICK_HOME=/usr
 ENV ENV=p
 
 # Set ImageMagick policy to allow PDF operations
-COPY policy.xml /etc/ImageMagick-6/policy.xml
+# TODO: This is build from the root directory.
+COPY tasks/video_generator/policy.xml /etc/ImageMagick-6/policy.xml
 
 # Set proper permissions for ImageMagick and temporary directories
 RUN chmod 777 /tmp && \
