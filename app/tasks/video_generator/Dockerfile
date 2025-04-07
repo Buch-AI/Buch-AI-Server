@@ -38,6 +38,14 @@ WORKDIR $APP_ROOT
 ENV PYTHONPATH=$APP_ROOT
 ENV ENV=p
 
+# Define build arguments
+ARG AUTH_JWT_KEY
+ARG HF_API_KEY
+
+# Set environment variables from build arguments
+ENV AUTH_JWT_KEY=$AUTH_JWT_KEY
+ENV HF_API_KEY=$HF_API_KEY
+
 # Copy only the requirements file first to leverage Docker cache
 RUN pip install --upgrade pip
 COPY pyproject.toml .
