@@ -15,6 +15,9 @@ jobs:
   build:
     environment: google-cloud
     runs-on: ubuntu-latest
+    outputs:
+      server_image_tag: ${{ env.SERVER_IMAGE_TAG }}
+      vidgen_image_tag: ${{ env.VIDGEN_IMAGE_TAG }}
     steps:      
       - name: ⚙️ Set up repository
         uses: actions/checkout@v2
