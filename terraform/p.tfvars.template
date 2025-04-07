@@ -1,6 +1,5 @@
-gcp_svc_key_file = "terraform/service-account.json"
-gcp_project_id   = "bai-buchai-p"
-gcp_region       = "us-east1"
+gcp_project_id = "bai-buchai-p"
+gcp_region     = "us-east1"
 
 server_image_tag = "{{SERVER_IMAGE_TAG}}"
 vidgen_image_tag = "{{VIDGEN_IMAGE_TAG}}"

@@ -86,12 +86,9 @@ jobs:
         with:
           terraform_version: "1.7.0"
 
-      - name: ⚙️ Create service account key file
-        run: |
-          echo '${{ secrets.GOOGLE_CREDENTIALS }}' > ${{ github.workspace }}/terraform/service-account.json
-          chmod 600 ${{ github.workspace }}/terraform/service-account.json
-
       - name: ⚙️ Generate terraform.tfvars
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
           sed -e "s/{{AUTH_JWT_KEY}}/${{ secrets.AUTH_JWT_KEY }}/g" \
               -e "s/{{HF_API_KEY}}/${{ secrets.HF_API_KEY }}/g" \
@@ -101,6 +98,8 @@ jobs:
 
       - name: ⚙️ Terraform Init
         working-directory: ./terraform
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
           rm -f .terraform.lock.hcl
           terraform init \
@@ -110,10 +109,14 @@ jobs:
 
       - name: ⚙️ Terraform Validate
         working-directory: ./terraform
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: terraform validate
 
       - name: ⚙️ Import Existing Resources
         working-directory: ./terraform
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
           terraform import google_bigquery_dataset.creations projects/bai-buchai-p/datasets/creations || true
           terraform import google_bigquery_dataset.tasks projects/bai-buchai-p/datasets/tasks || true
@@ -128,15 +131,18 @@ jobs:
 
       - name: ⚙️ Terraform Plan
         working-directory: ./terraform
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: terraform plan -out=tfplan
 
       - name: ⚙️ Terraform Apply
         working-directory: ./terraform
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
           terraform apply -auto-approve tfplan
 
       - name: 🧹 Cleanup
         if: always()
         run: |
-          rm -f ${{ github.workspace }}/terraform/service-account.json
           rm -f terraform/terraform.tfvars 
