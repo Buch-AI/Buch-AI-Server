@@ -1,5 +1,9 @@
 # Buch-AI-Server
 
+## Tech Stack
+
+[![My Skills](https://skillicons.dev/icons?i=docker,fastapi,gcp,githubactions,py,terraform)](https://skillicons.dev)
+
 ## Get started with development
 
 1. Clone the repository.
@@ -64,4 +68,16 @@ docker push $TAG
 4. Deploy to Cloud Run.
 ```bash
 gcloud run deploy bai-buchai-p-run-usea1-server --region us-east1 --image $TAG
+```
+
+## Google Cloud administration
+
+### Setting IAM permissions and roles
+
+```bash
+export GOOGLE_CLOUD_PROJECT=$(gcloud config get-value core/project)
+gcloud iam service-accounts create bai-buchai-p-svc-euwe2-gbq
+gcloud iam service-accounts keys create ~/key.json --iam-account bai-buchai-p-svc-euwe2-gbq@${GOOGLE_CLOUD_PROJECT}.iam.gserviceaccount.com
+gcloud projects add-iam-policy-binding ${GOOGLE_CLOUD_PROJECT} --member "serviceAccount:bai-buchai-p-svc-euwe2-gbq@${GOOGLE_CLOUD_PROJECT}.iam.gserviceaccount.com" --role "roles/bigquery.user"
+gcloud projects get-iam-policy $GOOGLE_CLOUD_PROJECT
 ```

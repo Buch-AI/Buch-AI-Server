@@ -143,6 +143,15 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Terraform
+terraform.tfvars
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+crash.log
+
 # Cursor
 .cursorrules
 

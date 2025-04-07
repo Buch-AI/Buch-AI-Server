@@ -1,0 +1,74 @@
+name: Terraform
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terraform:
+    environment: google-cloud
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⚙️ Checkout repository
+        uses: actions/checkout@v2
+
+      - name: ⚙️ Authenticate to Google Cloud
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GOOGLE_CREDENTIALS }}'
+
+      - name: ⚙️ Set up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          project_id: 'bai-buchai-p'
+
+      - name: ⚙️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: ⚙️ Create service account key file
+        run: |
+          echo '${{ secrets.GOOGLE_CREDENTIALS }}' > service-account.json
+          chmod 600 service-account.json
+
+      - name: ⚙️ Terraform Init
+        working-directory: ./terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=bai-buchai-p-tfstate-usea1" \
+            -backend-config="prefix=terraform/state"
+
+      - name: ⚙️ Terraform Format
+        working-directory: ./terraform
+        run: terraform fmt -check
+
+      - name: ⚙️ Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
+
+      - name: ⚙️ Terraform Plan
+        working-directory: ./terraform
+        run: |
+          terraform plan \
+            -var="gcp_svc_key_file=../service-account.json" \
+            -var="gcp_project_id=bai-buchai-p" \
+            -var="gcp_region=us-east1" \
+            -out=tfplan
+
+      - name: ⚙️ Terraform Apply
+        working-directory: ./terraform
+        run: |
+          terraform apply -auto-approve tfplan
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: rm -f service-account.json 
