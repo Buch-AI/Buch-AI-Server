@@ -25,14 +25,20 @@ uv run pre-commit install
 5. Run the API in development mode.
 ```bash
 # Either, ...
-uv run main.py
+uv run app/main.py
 # Or, ...
-uv run fastapi dev main.py --port 8080
+uv run fastapi dev app/main.py --port 8080
 ```
 
 ## Deployment
 
 For naming conventions, refer to https://stepan.wtf/cloud-naming-convention/.
+
+### Continuous deployment
+
+The GitHub repository has been configured to automatically deploy to Google Cloud Run upon pushing a new commit to the `main` branch. Refer to the GitHub Actions workflow manifest (`.github/workflows/deploy-google-cloud-run.yaml`) for more information.
+
+### Manual step-by-step
 
 1. Authenticate to Google Cloud.
 ```bash

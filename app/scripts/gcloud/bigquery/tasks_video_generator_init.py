@@ -1,5 +1,6 @@
 from google.cloud import bigquery
-from scripts.gcloud.bigquery import common
+
+from app.scripts.gcloud.bigquery import common
 
 dataset_id = "tasks"
 table_id = "video_generator"

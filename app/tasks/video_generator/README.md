@@ -68,5 +68,5 @@ gs://bai-buchai-p-stb-usea1-creations/
 
 For local testing, use the Video Generator demo script:
 ```bash
-python -m scripts.tasks.video_generator_demo --assets-dir <path_to_assets>
+python -m app.scripts.tasks.video_generator_demo --assets-dir <path_to_assets>
 ```

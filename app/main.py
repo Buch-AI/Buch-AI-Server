@@ -1,10 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers.auth_routes import auth_router
-from routers.database_routes import database_router
-from routers.image_routes import image_router
-from routers.llm_routes import llm_router
-from routers.me_routes import me_router
+
+from app.routers.auth_routes import auth_router
+from app.routers.database_routes import database_router
+from app.routers.image_routes import image_router
+from app.routers.llm_routes import llm_router
+from app.routers.me_routes import me_router
 
 app = FastAPI()
 
