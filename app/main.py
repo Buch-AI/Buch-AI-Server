@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from routers.auth_routes import auth_router
 from routers.database_routes import database_router
 from routers.image_routes import image_router

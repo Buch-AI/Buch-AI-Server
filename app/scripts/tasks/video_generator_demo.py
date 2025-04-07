@@ -5,8 +5,9 @@ import os
 from datetime import datetime
 from typing import Any, Dict, get_type_hints
 
-from config import PROJECT_ROOT
 from tasks.video_generator.main import VideoGenerator
+
+from config import PROJECT_ROOT
 
 # Configure logging
 logging.basicConfig(

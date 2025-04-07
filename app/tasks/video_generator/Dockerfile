@@ -31,19 +31,22 @@ RUN chmod 777 /tmp && \
     chmod 777 /tmp/magick
 
 # Set working directory
-WORKDIR /app
+ENV APP_ROOT /root
+WORKDIR $APP_ROOT
 
 # Set environment variables
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=$APP_ROOT
 ENV ENV=p
 
 # Copy only the requirements file first to leverage Docker cache
+RUN pip install --upgrade pip
 COPY pyproject.toml .
 COPY setup.py .
 RUN pip install --no-cache-dir -e .
 
-# Copy the entire project
-COPY . .
+# Copy only necessary files
+COPY config.py $APP_ROOT/
+COPY app/ $APP_ROOT/app/
 
 # Run the video generator
-ENTRYPOINT ["python", "-m", "tasks.video_generator.main"] 
+ENTRYPOINT ["python", "-m", "app.tasks.video_generator.main"] 

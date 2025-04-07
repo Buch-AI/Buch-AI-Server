@@ -7,15 +7,15 @@ import vertexai
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import Response, StreamingResponse
 from huggingface_hub import AsyncInferenceClient, InferenceClient
-from pydantic import BaseModel
-from vertexai.generative_models import Content, GenerationConfig, GenerativeModel, Part
-
-from config import HF_API_KEY
 from models.llm import (
     HuggingFaceConfigManager,
     ModelType,
     VertexAiConfigManager,
 )
+from pydantic import BaseModel
+from vertexai.generative_models import Content, GenerationConfig, GenerativeModel, Part
+
+from config import HF_API_KEY
 
 # TODO: Depending on which provider is avaiable, switch.
 # Global LLM provider setting

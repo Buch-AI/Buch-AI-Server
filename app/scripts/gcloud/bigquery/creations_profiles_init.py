@@ -1,5 +1,4 @@
 from google.cloud import bigquery
-
 from scripts.gcloud.bigquery import common
 
 dataset_id = "creations"

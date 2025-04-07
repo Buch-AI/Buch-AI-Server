@@ -12,10 +12,10 @@ from google.cloud import bigquery, run_v2, storage
 from google.cloud.run_v2.types.condition import Condition
 from PIL import Image
 from pydantic import BaseModel
-
-from config import ENV, GCLOUD_STB_CREATIONS_NAME
 from routers.auth_routes import User, get_current_active_user
 from tasks.video_generator.main import VideoGenerator
+
+from config import ENV, GCLOUD_STB_CREATIONS_NAME
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR)
