@@ -1,4 +1,4 @@
-gcp_svc_key_file = "service-account.json"
+gcp_svc_key_file = "terraform/service-account.json"
 gcp_project_id   = "bai-buchai-p"
 gcp_region       = "us-east1"
 

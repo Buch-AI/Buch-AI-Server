@@ -88,8 +88,8 @@ jobs:
 
       - name: ⚙️ Create service account key file
         run: |
-          echo '${{ secrets.GOOGLE_CREDENTIALS }}' > service-account.json
-          chmod 600 service-account.json
+          echo '${{ secrets.GOOGLE_CREDENTIALS }}' > ${{ github.workspace }}/terraform/service-account.json
+          chmod 600 ${{ github.workspace }}/terraform/service-account.json
 
       - name: ⚙️ Generate terraform.tfvars
         run: |
@@ -124,7 +124,7 @@ jobs:
           terraform import google_bigquery_table.users_profiles projects/bai-buchai-p/datasets/users/tables/profiles || true
           terraform import google_storage_bucket.creations bai-buchai-p-stb-usea1-creations || true
           terraform import google_cloud_run_service.server projects/bai-buchai-p/locations/us-east1/services/bai-buchai-p-run-usea1-server || true
-          terraform import google_cloud_run_job.video_generator projects/bai-buchai-p/locations/us-east1/jobs/bai-buchai-p-crj-usea1-vidgen || true
+          terraform import google_cloud_run_v2_job.video_generator projects/bai-buchai-p/locations/us-east1/jobs/bai-buchai-p-crj-usea1-vidgen || true
 
       - name: ⚙️ Terraform Plan
         working-directory: ./terraform
@@ -138,5 +138,5 @@ jobs:
       - name: 🧹 Cleanup
         if: always()
         run: |
-          rm -f service-account.json
+          rm -f ${{ github.workspace }}/terraform/service-account.json
           rm -f terraform/terraform.tfvars 
