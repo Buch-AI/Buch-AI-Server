@@ -257,10 +257,10 @@ resource "google_bigquery_table" "users_profiles" {
 # Google Cloud Storage
 
 resource "google_storage_bucket" "creations" {
-  name = "bai-buchai-p-stb-usea1-creations"
+  name     = "bai-buchai-p-stb-usea1-creations"
   location = "us-east1"
 
-  storage_class = "STANDARD"
+  storage_class               = "STANDARD"
   uniform_bucket_level_access = true
-  public_access_prevention = "enforced"
+  public_access_prevention    = "enforced"
 }
