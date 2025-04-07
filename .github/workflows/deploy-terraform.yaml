@@ -102,9 +102,11 @@ jobs:
       - name: ⚙️ Terraform Init
         working-directory: ./terraform
         run: |
+          rm -f .terraform.lock.hcl
           terraform init \
             -backend-config="bucket=bai-buchai-p-tfstate-usea1" \
-            -backend-config="prefix=terraform/state"
+            -backend-config="prefix=terraform/state" \
+            -upgrade
 
       - name: ⚙️ Terraform Validate
         working-directory: ./terraform

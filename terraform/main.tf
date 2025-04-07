@@ -35,23 +35,21 @@ resource "google_cloud_run_service_iam_member" "server_public" {
   member   = "allUsers"
 }
 
-resource "google_cloud_run_job" "video_generator" {
+resource "google_cloud_run_v2_job" "video_generator" {
   name     = "bai-buchai-p-crj-usea1-vidgen"
   location = var.gcp_region
 
   template {
     template {
-      spec {
-        containers {
-          image = var.vidgen_image_tag
-        }
+      containers {
+        image = var.vidgen_image_tag
       }
     }
   }
 
   lifecycle {
     ignore_changes = [
-      template[0].template[0].spec[0].containers[0].image
+      template[0].template[0].containers[0].image
     ]
   }
 }
