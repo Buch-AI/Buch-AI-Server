@@ -26,8 +26,8 @@ def get_method_params() -> Dict[str, Dict[str, Any]]:
 
     params = {}
     for name, param in signature.parameters.items():
-        # Skip 'slides' and 'cls' as they're handled separately
-        if name in ("slides", "cls"):
+        # Skip 'slides' as it's handled separately
+        if name == "slides":
             continue
 
         param_type = type_hints.get(name, Any)
@@ -79,18 +79,9 @@ def main():
         slides = VideoGenerator.load_assets_from_directory(args.assets_dir)
         logger.info(f"Found {len(slides)} slides")
 
-        # Build kwargs for VideoGenerator dynamically
-        kwargs = {"slides": slides}
-
-        # Add other parameters from args, excluding special handling args
-        special_args = {"assets_dir"}
-        for key, value in vars(args).items():
-            if key not in special_args and value is not None:
-                kwargs[key] = value
-
         # Generate video
         logger.info("Generating video...")
-        video_bytes = VideoGenerator.create_video_from_slides(**kwargs)
+        video_bytes = VideoGenerator.create_video_from_slides(slides=slides)
 
         # Create output filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -47,7 +47,7 @@ python video_generator_demo.py --assets-dir /path/to/assets
 For example:
 
 ```bash
-uv run python -m scripts.models.video_generator_demo --assets-dir assets/d/video_generator/creation_1/
+uv run python -m scripts.tasks.video_generator_demo --assets-dir assets/d/video_generator/creation_1/
 ```
 
 This will:
