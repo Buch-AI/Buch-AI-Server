@@ -15,13 +15,16 @@ jobs:
   build-docker:
     environment: google-cloud
     runs-on: ubuntu-latest
-    steps:      
+    outputs:
+      server_image_tag: ${{ steps.export.outputs.server_image_tag }}
+      vidgen_image_tag: ${{ steps.export.outputs.vidgen_image_tag }}
+    steps:
       - name: ⚙️ Set up repository
         uses: actions/checkout@v2
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: ⚙️ Authenticate to Google Cloud
         uses: 'google-github-actions/auth@v2'
         with:
@@ -37,28 +40,32 @@ jobs:
           gcloud auth configure-docker us-east1-docker.pkg.dev --quiet
 
       - name: 🏗️ Build Docker images
-        env:
-          SERVER_IMAGE_TAG: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0
-          VIDGEN_IMAGE_TAG: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-video-generator:0.1.0
         run: |
-          # Build server image
+          SERVER_IMAGE_TAG="us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0"
+          VIDGEN_IMAGE_TAG="us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-video-generator:0.1.0"
+
+          echo "Building server image..."
           docker build -t $SERVER_IMAGE_TAG --platform linux/amd64 \
             --build-arg AUTH_JWT_KEY=${{ secrets.AUTH_JWT_KEY }} \
-            --build-arg HF_API_KEY=${{ secrets.HF_API_KEY }} \
-            .
-          
-          # Build task image: Video Generator
+            --build-arg HF_API_KEY=${{ secrets.HF_API_KEY }} .
+
+          echo "Building video generator image..."
           docker build -t $VIDGEN_IMAGE_TAG --platform linux/amd64 \
-            -f app/tasks/video_generator/Dockerfile \
-            .
+            -f app/tasks/video_generator/Dockerfile .
+
+          echo "SERVER_IMAGE_TAG=$SERVER_IMAGE_TAG" >> $GITHUB_ENV
+          echo "VIDGEN_IMAGE_TAG=$VIDGEN_IMAGE_TAG" >> $GITHUB_ENV
 
       - name: 📤 Push Docker images
-        env:
-          SERVER_IMAGE_TAG: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0
-          VIDGEN_IMAGE_TAG: us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-video-generator:0.1.0
         run: |
           docker push $SERVER_IMAGE_TAG
           docker push $VIDGEN_IMAGE_TAG
+
+      - name: 📦 Export image tags for downstream jobs
+        id: export
+        run: |
+          echo "server_image_tag=$SERVER_IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "vidgen_image_tag=$VIDGEN_IMAGE_TAG" >> $GITHUB_OUTPUT
 
   terraform:
     environment: google-cloud
@@ -89,6 +96,8 @@ jobs:
         run: |
           sed -e "s/{{AUTH_JWT_KEY}}/${{ secrets.AUTH_JWT_KEY }}/g" \
               -e "s/{{HF_API_KEY}}/${{ secrets.HF_API_KEY }}/g" \
+              -e "s|{{SERVER_IMAGE_TAG}}|${{ needs.build-docker.outputs.server_image_tag }}|g" \
+              -e "s|{{VIDGEN_IMAGE_TAG}}|${{ needs.build-docker.outputs.vidgen_image_tag }}|g" \
               terraform/p.tfvars.template > terraform/terraform.tfvars
           cat terraform/terraform.tfvars
 
