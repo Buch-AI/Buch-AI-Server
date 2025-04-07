@@ -1,24 +1,21 @@
 import logging
-import os
 from abc import ABC, abstractmethod
 from traceback import format_exc
 from typing import AsyncGenerator, List, Literal
 
 import vertexai
-from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import Response, StreamingResponse
 from huggingface_hub import AsyncInferenceClient, InferenceClient
 from pydantic import BaseModel
 from vertexai.generative_models import Content, GenerationConfig, GenerativeModel, Part
 
+from config import HF_API_KEY
 from models.llm import (
     HuggingFaceConfigManager,
     ModelType,
     VertexAiConfigManager,
 )
-
-load_dotenv()
 
 # TODO: Depending on which provider is avaiable, switch.
 # Global LLM provider setting
@@ -59,7 +56,6 @@ class HuggingFaceRouterService(LlmRouterService):
     """HuggingFace implementation of the LLM router service."""
 
     def __init__(self):
-        HF_API_KEY = os.getenv("HF_API_KEY")
         if not HF_API_KEY:
             raise ValueError(
                 "HF_API_KEY environment variable is not set. Please set it in your .env file."

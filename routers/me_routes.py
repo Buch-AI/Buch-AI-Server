@@ -9,11 +9,11 @@ from typing import Annotated, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import bigquery, run_v2, storage
-from google.cloud.run_v2.types import Job, TaskTemplate
+from google.cloud.run_v2.types.condition import Condition
 from PIL import Image
 from pydantic import BaseModel
 
-from config import ENV, GCLOUD_CREATIONS_STB_NAME
+from config import ENV, GCLOUD_STB_CREATIONS_NAME
 from routers.auth_routes import User, get_current_active_user
 from tasks.video_generator.main import VideoGenerator
 
@@ -152,7 +152,7 @@ async def set_story_parts(
         storage_client = storage.Client()
 
         # Get bucket reference
-        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+        bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
 
         # Upload each story part as 1.txt
         for index, story_part in enumerate(story_parts, start=1):
@@ -184,7 +184,7 @@ async def get_story_parts(
         storage_client = storage.Client()
 
         # Get bucket reference
-        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+        bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
         story_parts = []
         part_number = 1
 
@@ -228,7 +228,7 @@ async def set_images(
     try:
         # Initialize client
         storage_client = storage.Client()
-        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+        bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
         processed_images = []
 
         # Upload each image
@@ -315,7 +315,7 @@ async def get_images(
     try:
         # Initialize client
         storage_client = storage.Client()
-        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+        bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
         images = []
         part_number = 1
 
@@ -359,7 +359,7 @@ async def get_video(
     try:
         # Initialize client
         storage_client = storage.Client()
-        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+        bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
 
         # Get video blob
         video_blob_path = f"{creation_id}/assets/video.mp4"
@@ -395,17 +395,117 @@ async def generate_video_status(
 ) -> TaskStatus:
     """Get the status of video generation for a creation."""
     try:
-        storage_client = storage.Client()
-        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+        if ENV == "p":
+            # Initialize BigQuery client
+            bq_client = bigquery.Client()
 
-        # Check if video exists
-        video_blob = bucket.blob(f"{creation_id}/assets/video.mp4")
-        if video_blob.exists():
-            return TaskStatus(status="completed")
+            # First, get the task record from BigQuery
+            query = """
+            SELECT execution_id, status
+            FROM `bai-buchai-p.tasks.video_generator`
+            WHERE creation_id = @creation_id
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
 
-        # Check if job is running (you might want to store this in a database)
-        # For now, we'll just return pending if video doesn't exist
-        return TaskStatus(status="pending")
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
+                ]
+            )
+
+            query_job = bq_client.query(query, job_config=job_config)
+            results = list(query_job.result())
+
+            if not results:
+                return TaskStatus(
+                    status="not_found", message="No task found for this creation"
+                )
+
+            task = results[0]
+            execution_name = task.execution_id
+            current_status = task.status
+
+            # Initialize Cloud Run Executions client
+            client = run_v2.ExecutionsClient()
+
+            try:
+                # Get the execution status using the full execution name
+                execution = client.get_execution(name=execution_name)
+
+                if not execution.conditions:
+                    return TaskStatus(
+                        status=current_status,
+                        message="Job execution status not available",
+                    )
+
+                # Get the latest condition
+                latest_condition = execution.conditions[-1]
+
+                # Map condition to status
+                if latest_condition.state == Condition.State.CONDITION_FAILED:
+                    new_status = "failed"
+                elif (
+                    latest_condition.state == Condition.State.CONDITION_SUCCEEDED
+                    and latest_condition.type_ == "ResourcesAvailable"
+                ):
+                    new_status = "completed"
+                elif (
+                    latest_condition.state == Condition.State.CONDITION_SUCCEEDED
+                    and latest_condition.type_ == "Retry"
+                ):
+                    new_status = "running"
+                else:
+                    # Unknown state
+                    new_status = current_status
+
+                message = latest_condition.reason if new_status == "failed" else None
+
+                # Update the task status in BigQuery if it has changed
+                if new_status != current_status:
+                    update_query = """
+                    UPDATE `bai-buchai-p.tasks.video_generator`
+                    SET status = @new_status,
+                        updated_at = CURRENT_TIMESTAMP()
+                    WHERE creation_id = @creation_id
+                    AND execution_id = @execution_id
+                    """
+
+                    update_config = bigquery.QueryJobConfig(
+                        query_parameters=[
+                            bigquery.ScalarQueryParameter(
+                                "new_status", "STRING", new_status
+                            ),
+                            bigquery.ScalarQueryParameter(
+                                "creation_id", "STRING", creation_id
+                            ),
+                            bigquery.ScalarQueryParameter(
+                                "execution_id", "STRING", execution_name
+                            ),
+                        ]
+                    )
+
+                    bq_client.query(update_query, update_config).result()
+
+                return TaskStatus(status=new_status, message=message)
+
+            except Exception as e:
+                if "NOT_FOUND" in str(e):
+                    return TaskStatus(
+                        status="not_found",
+                        message="No job execution found for this creation",
+                    )
+                raise
+
+        else:
+            # In development, check if video exists
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
+            video_blob = bucket.blob(f"{creation_id}/assets/video.mp4")
+
+            if video_blob.exists():
+                return TaskStatus(status="completed")
+            return TaskStatus(status="running")
 
     except Exception as e:
         logger.error(f"Failed to get video status: {str(e)}\n{format_exc()}")
@@ -428,24 +528,57 @@ async def generate_video(
             client = run_v2.JobsClient()
 
             parent = "projects/bai-buchai-p/locations/us-east1"
+            name = f"{parent}/jobs/buch-ai-video-generator"
 
-            # Create job configuration
-            job = Job(
-                template=TaskTemplate(
-                    containers=[
-                        {
-                            "image": "us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-video-generator:latest",
-                            "args": [creation_id],
-                            "env": [{"name": "ENV", "value": f"{ENV}"}],
-                        }
-                    ]
+            # Execute the existing job
+            operation = client.run_job(
+                run_v2.RunJobRequest(
+                    name=name,
+                    overrides={
+                        "container_overrides": [
+                            {
+                                "args": [creation_id],
+                                "env": [{"name": "ENV", "value": f"{ENV}"}],
+                            }
+                        ],
+                        "task_count": 1,
+                    },
                 )
             )
+            # Access the metadata (which contains the execution info)
+            metadata = operation.metadata
 
-            # Create and run the job
-            client.create_job(
-                parent=parent, job=job, job_id=f" buch-ai-video-generator-{creation_id}"
+            # This is a google.cloud.run_v2.types.RunJobMetadata object
+            execution_name = metadata.name  # Full resource name
+
+            # Initialize BigQuery client
+            bq_client = bigquery.Client()
+
+            # Insert initial task record
+            query = """
+            INSERT INTO `bai-buchai-p.tasks.video_generator` (
+                creation_id, execution_id, created_at, updated_at, status, metadata
             )
+            VALUES (
+                @creation_id,
+                @execution_id,
+                CURRENT_TIMESTAMP(),
+                CURRENT_TIMESTAMP(),
+                'pending',
+                JSON_OBJECT()
+            )
+            """
+
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
+                    bigquery.ScalarQueryParameter(
+                        "execution_id", "STRING", execution_name
+                    ),
+                ]
+            )
+
+            bq_client.query(query, job_config=job_config).result()
 
             # Return immediate response
             return TaskStatus(
@@ -456,7 +589,7 @@ async def generate_video(
         else:
             # Development: Run locally
             # Use VideoGenerator to load assets directly from GCS
-            gcs_path = f"gs://{GCLOUD_CREATIONS_STB_NAME}/{creation_id}/assets"
+            gcs_path = f"gs://{GCLOUD_STB_CREATIONS_NAME}/{creation_id}/assets"
             slides = VideoGenerator.load_assets_from_directory(gcs_path)
 
             if not slides:
@@ -473,7 +606,7 @@ async def generate_video(
 
             # Upload video to Google Cloud Storage
             storage_client = storage.Client()
-            bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+            bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
             video_blob_path = f"{creation_id}/assets/video.mp4"
             video_blob = bucket.blob(video_blob_path)
             video_blob.upload_from_string(video_bytes, content_type="video/mp4")
@@ -603,7 +736,7 @@ async def delete_creation(
         delete_job.result()  # Wait for the query to complete
 
         # Delete from Google Cloud Storage
-        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+        bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
         blobs = bucket.list_blobs(prefix=f"{creation_id}/")
         for blob in blobs:
             blob.delete()

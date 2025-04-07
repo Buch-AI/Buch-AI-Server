@@ -24,7 +24,7 @@ from moviepy.video.fx.fadeout import fadeout
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from config import ASSETS_P_DIR, GCLOUD_CREATIONS_STB_NAME
+from config import ASSETS_P_DIR, GCLOUD_STB_CREATIONS_NAME
 
 # Configure logging
 logging.basicConfig(
@@ -541,7 +541,7 @@ if __name__ == "__main__":
 
     try:
         # Load slides from GCS
-        gcs_path = f"gs://{GCLOUD_CREATIONS_STB_NAME}/{creation_id}/assets"
+        gcs_path = f"gs://{GCLOUD_STB_CREATIONS_NAME}/{creation_id}/assets"
         slides = VideoGenerator.load_assets_from_directory(gcs_path)
 
         if not slides:
@@ -552,7 +552,7 @@ if __name__ == "__main__":
 
         # Upload to GCS
         storage_client = storage.Client()
-        bucket = storage_client.bucket(GCLOUD_CREATIONS_STB_NAME)
+        bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
         video_blob_path = f"{creation_id}/assets/video.mp4"
         video_blob = bucket.blob(video_blob_path)
         video_blob.upload_from_string(video_bytes, content_type="video/mp4")

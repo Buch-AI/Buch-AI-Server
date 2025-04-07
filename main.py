@@ -1,4 +1,3 @@
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,8 +6,6 @@ from routers.database_routes import database_router
 from routers.image_routes import image_router
 from routers.llm_routes import llm_router
 from routers.me_routes import me_router
-
-load_dotenv()
 
 app = FastAPI()
 

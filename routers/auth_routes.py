@@ -1,11 +1,9 @@
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from traceback import format_exc
 from typing import Annotated
 
 import jwt
-from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from google.cloud import bigquery
@@ -13,7 +11,7 @@ from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
-load_dotenv()
+from config import AUTH_JWT_KEY
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR)
@@ -26,9 +24,8 @@ auth_router = APIRouter()
 client = bigquery.Client()
 
 # JWT configuration
-SECRET_KEY = os.getenv("AUTH_JWT_KEY")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 
 # Pydantic models
@@ -102,7 +99,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, AUTH_JWT_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 
@@ -113,7 +110,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, AUTH_JWT_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if username is None:
             logger.error(f"No username found in token\n{format_exc()}")
