@@ -62,6 +62,24 @@ jobs:
             -var="gcp_svc_key_file=../service-account.json" \
             -var="gcp_project_id=bai-buchai-p" \
             -var="gcp_region=us-east1" \
+            google_bigquery_dataset.creations projects/bai-buchai-p/datasets/creations
+          
+          terraform import \
+            -var="gcp_svc_key_file=../service-account.json" \
+            -var="gcp_project_id=bai-buchai-p" \
+            -var="gcp_region=us-east1" \
+            google_bigquery_dataset.tasks projects/bai-buchai-p/datasets/tasks
+
+          terraform import \
+            -var="gcp_svc_key_file=../service-account.json" \
+            -var="gcp_project_id=bai-buchai-p" \
+            -var="gcp_region=us-east1" \
+            google_bigquery_dataset.users projects/bai-buchai-p/datasets/users
+
+          terraform import \
+            -var="gcp_svc_key_file=../service-account.json" \
+            -var="gcp_project_id=bai-buchai-p" \
+            -var="gcp_region=us-east1" \
             google_bigquery_table.creations_profiles projects/bai-buchai-p/datasets/creations/tables/profiles
 
           terraform import \
