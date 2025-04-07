@@ -94,7 +94,8 @@ jobs:
               -e "s/{{HF_API_KEY}}/${{ secrets.HF_API_KEY }}/g" \
               -e "s/{{SERVER_IMAGE_TAG}}/${{ needs.build-docker.outputs.server_image_tag }}/g" \
               -e "s/{{VIDGEN_IMAGE_TAG}}/${{ needs.build-docker.outputs.vidgen_image_tag }}/g" \
-              terraform/p.tfvars.template > terraform/terraform.tfvars
+              terraform/p.tfvars.template > terraform.tfvars
+          cat terraform.tfvars
 
       - name: ⚙️ Terraform Init
         working-directory: ./terraform
@@ -126,7 +127,7 @@ jobs:
           terraform import google_bigquery_table.users_auth projects/bai-buchai-p/datasets/users/tables/auth || true
           terraform import google_bigquery_table.users_profiles projects/bai-buchai-p/datasets/users/tables/profiles || true
           terraform import google_storage_bucket.creations bai-buchai-p-stb-usea1-creations || true
-          terraform import google_cloud_run_service.server projects/bai-buchai-p/locations/us-east1/services/bai-buchai-p-run-usea1-server || true
+          terraform import google_cloud_run_service.server us-east1/bai-buchai-p/bai-buchai-p-run-usea1-server || true
           terraform import google_cloud_run_v2_job.video_generator projects/bai-buchai-p/locations/us-east1/jobs/bai-buchai-p-crj-usea1-vidgen || true
 
       - name: ⚙️ Terraform Plan
