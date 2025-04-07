@@ -54,7 +54,7 @@ resource "google_cloud_run_v2_job" "video_generator" {
   }
 
   annotations = {
-    "run.googleapis.com/revision-suffix" = substr(md5(timestamp()), 0, 4)
+    "dummy/revision-suffix" = substr(md5(timestamp()), 0, 4)
   }
 }
 
