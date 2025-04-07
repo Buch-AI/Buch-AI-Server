@@ -55,6 +55,16 @@ jobs:
         working-directory: ./terraform
         run: terraform validate
 
+      - name: ⚙️ Import Existing Resources
+        working-directory: ./terraform
+        run: |
+          terraform import google_bigquery_table.creations_profiles bai-buchai-p:creations.profiles || true
+          terraform import google_bigquery_table.tasks_video_generator bai-buchai-p:tasks.video_generator || true
+          terraform import google_bigquery_table.users_auth bai-buchai-p:users.auth || true
+          terraform import google_bigquery_table.users_profiles bai-buchai-p:users.profiles || true
+
+          terraform import google_storage_bucket.creations bai-buchai-p-stb-usea1-creations || true
+
       - name: ⚙️ Terraform Plan
         working-directory: ./terraform
         run: |
