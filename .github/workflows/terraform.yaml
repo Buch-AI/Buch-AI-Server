@@ -58,14 +58,35 @@ jobs:
       - name: ⚙️ Import Existing Resources
         working-directory: ./terraform
         run: |
-          terraform import google_bigquery_table.creations_profiles bai-buchai-p:creations.profiles
-          terraform import google_bigquery_table.tasks_video_generator bai-buchai-p:tasks.video_generator
-          terraform import google_bigquery_table.users_auth bai-buchai-p:users.auth
-          terraform import google_bigquery_table.users_profiles bai-buchai-p:users.profiles
+          terraform import \
+            -var="gcp_svc_key_file=../service-account.json" \
+            -var="gcp_project_id=bai-buchai-p" \
+            -var="gcp_region=us-east1" \
+            google_bigquery_table.creations_profiles bai-buchai-p:creations.profiles
 
-          terraform import google_storage_bucket.creations bai-buchai-p-stb-usea1-creations
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: service-account.json
+          terraform import \
+            -var="gcp_svc_key_file=../service-account.json" \
+            -var="gcp_project_id=bai-buchai-p" \
+            -var="gcp_region=us-east1" \
+            google_bigquery_table.tasks_video_generator bai-buchai-p:tasks.video_generator
+
+          terraform import \
+            -var="gcp_svc_key_file=../service-account.json" \
+            -var="gcp_project_id=bai-buchai-p" \
+            -var="gcp_region=us-east1" \
+            google_bigquery_table.users_auth bai-buchai-p:users.auth
+
+          terraform import \
+            -var="gcp_svc_key_file=../service-account.json" \
+            -var="gcp_project_id=bai-buchai-p" \
+            -var="gcp_region=us-east1" \
+            google_bigquery_table.users_profiles bai-buchai-p:users.profiles
+
+          terraform import \
+            -var="gcp_svc_key_file=../service-account.json" \
+            -var="gcp_project_id=bai-buchai-p" \
+            -var="gcp_region=us-east1" \
+            google_storage_bucket.creations bai-buchai-p-stb-usea1-creations
 
       - name: ⚙️ Terraform Plan
         working-directory: ./terraform
