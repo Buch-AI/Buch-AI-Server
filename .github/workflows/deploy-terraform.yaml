@@ -15,9 +15,6 @@ jobs:
   build-docker:
     environment: google-cloud
     runs-on: ubuntu-latest
-    outputs:
-      server_image_tag: ${{ env.SERVER_IMAGE_TAG }}
-      vidgen_image_tag: ${{ env.VIDGEN_IMAGE_TAG }}
     steps:      
       - name: ⚙️ Set up repository
         uses: actions/checkout@v2
@@ -92,10 +89,8 @@ jobs:
         run: |
           sed -e "s/{{AUTH_JWT_KEY}}/${{ secrets.AUTH_JWT_KEY }}/g" \
               -e "s/{{HF_API_KEY}}/${{ secrets.HF_API_KEY }}/g" \
-              -e "s/{{SERVER_IMAGE_TAG}}/${{ needs.build-docker.outputs.server_image_tag }}/g" \
-              -e "s/{{VIDGEN_IMAGE_TAG}}/${{ needs.build-docker.outputs.vidgen_image_tag }}/g" \
-              terraform/p.tfvars.template > terraform.tfvars
-          cat terraform.tfvars
+              terraform/p.tfvars.template > terraform/terraform.tfvars
+          cat terraform/terraform.tfvars
 
       - name: ⚙️ Terraform Init
         working-directory: ./terraform
