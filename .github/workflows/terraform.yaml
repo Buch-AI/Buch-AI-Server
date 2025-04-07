@@ -30,7 +30,7 @@ jobs:
         with:
           project_id: 'bai-buchai-p'
 
-      - name: ⚙️ Setup Terraform
+      - name: ⚙️ Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.7.0"
@@ -64,6 +64,8 @@ jobs:
           terraform import google_bigquery_table.users_profiles bai-buchai-p:users.profiles
 
           terraform import google_storage_bucket.creations bai-buchai-p-stb-usea1-creations
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: service-account.json
 
       - name: ⚙️ Terraform Plan
         working-directory: ./terraform
