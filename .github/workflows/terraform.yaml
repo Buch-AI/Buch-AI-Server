@@ -62,25 +62,25 @@ jobs:
             -var="gcp_svc_key_file=../service-account.json" \
             -var="gcp_project_id=bai-buchai-p" \
             -var="gcp_region=us-east1" \
-            google_bigquery_table.creations_profiles bai-buchai-p:creations.profiles
+            google_bigquery_table.creations_profiles projects/bai-buchai-p/datasets/creations/tables/profiles
 
           terraform import \
             -var="gcp_svc_key_file=../service-account.json" \
             -var="gcp_project_id=bai-buchai-p" \
             -var="gcp_region=us-east1" \
-            google_bigquery_table.tasks_video_generator bai-buchai-p:tasks.video_generator
+            google_bigquery_table.tasks_video_generator projects/bai-buchai-p/datasets/tasks/tables/video_generator
 
           terraform import \
             -var="gcp_svc_key_file=../service-account.json" \
             -var="gcp_project_id=bai-buchai-p" \
             -var="gcp_region=us-east1" \
-            google_bigquery_table.users_auth bai-buchai-p:users.auth
+            google_bigquery_table.users_auth projects/bai-buchai-p/datasets/users/tables/auth
 
           terraform import \
             -var="gcp_svc_key_file=../service-account.json" \
             -var="gcp_project_id=bai-buchai-p" \
             -var="gcp_region=us-east1" \
-            google_bigquery_table.users_profiles bai-buchai-p:users.profiles
+            google_bigquery_table.users_profiles projects/bai-buchai-p/datasets/users/tables/profiles
 
           terraform import \
             -var="gcp_svc_key_file=../service-account.json" \
