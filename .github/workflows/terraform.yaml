@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'terraform/**'
+      - '.github/workflows/terraform.yaml'
   workflow_dispatch:
 
 permissions:
@@ -40,6 +41,12 @@ jobs:
           echo '${{ secrets.GOOGLE_CREDENTIALS }}' > service-account.json
           chmod 600 service-account.json
 
+      - name: ⚙️ Generate terraform.tfvars
+        run: |
+          sed -e "s/{{AUTH_JWT_KEY}}/${{ secrets.AUTH_JWT_KEY }}/g" \
+              -e "s/{{HF_API_KEY}}/${{ secrets.HF_API_KEY }}/g" \
+              terraform/p.tfvars.template > terraform/terraform.tfvars
+
       - name: ⚙️ Terraform Init
         working-directory: ./terraform
         run: |
@@ -58,62 +65,20 @@ jobs:
       - name: ⚙️ Import Existing Resources
         working-directory: ./terraform
         run: |
-          terraform import \
-            -var="gcp_svc_key_file=../service-account.json" \
-            -var="gcp_project_id=bai-buchai-p" \
-            -var="gcp_region=us-east1" \
-            google_bigquery_dataset.creations projects/bai-buchai-p/datasets/creations
-          
-          terraform import \
-            -var="gcp_svc_key_file=../service-account.json" \
-            -var="gcp_project_id=bai-buchai-p" \
-            -var="gcp_region=us-east1" \
-            google_bigquery_dataset.tasks projects/bai-buchai-p/datasets/tasks
-
-          terraform import \
-            -var="gcp_svc_key_file=../service-account.json" \
-            -var="gcp_project_id=bai-buchai-p" \
-            -var="gcp_region=us-east1" \
-            google_bigquery_dataset.users projects/bai-buchai-p/datasets/users
-
-          terraform import \
-            -var="gcp_svc_key_file=../service-account.json" \
-            -var="gcp_project_id=bai-buchai-p" \
-            -var="gcp_region=us-east1" \
-            google_bigquery_table.creations_profiles projects/bai-buchai-p/datasets/creations/tables/profiles
-
-          terraform import \
-            -var="gcp_svc_key_file=../service-account.json" \
-            -var="gcp_project_id=bai-buchai-p" \
-            -var="gcp_region=us-east1" \
-            google_bigquery_table.tasks_video_generator projects/bai-buchai-p/datasets/tasks/tables/video_generator
-
-          terraform import \
-            -var="gcp_svc_key_file=../service-account.json" \
-            -var="gcp_project_id=bai-buchai-p" \
-            -var="gcp_region=us-east1" \
-            google_bigquery_table.users_auth projects/bai-buchai-p/datasets/users/tables/auth
-
-          terraform import \
-            -var="gcp_svc_key_file=../service-account.json" \
-            -var="gcp_project_id=bai-buchai-p" \
-            -var="gcp_region=us-east1" \
-            google_bigquery_table.users_profiles projects/bai-buchai-p/datasets/users/tables/profiles
-
-          terraform import \
-            -var="gcp_svc_key_file=../service-account.json" \
-            -var="gcp_project_id=bai-buchai-p" \
-            -var="gcp_region=us-east1" \
-            google_storage_bucket.creations bai-buchai-p-stb-usea1-creations
+          terraform import google_bigquery_dataset.creations projects/bai-buchai-p/datasets/creations || true
+          terraform import google_bigquery_dataset.tasks projects/bai-buchai-p/datasets/tasks || true
+          terraform import google_bigquery_dataset.users projects/bai-buchai-p/datasets/users || true
+          terraform import google_bigquery_table.creations_profiles projects/bai-buchai-p/datasets/creations/tables/profiles || true
+          terraform import google_bigquery_table.tasks_video_generator projects/bai-buchai-p/datasets/tasks/tables/video_generator
+          terraform import google_bigquery_table.users_auth projects/bai-buchai-p/datasets/users/tables/auth || true
+          terraform import google_bigquery_table.users_profiles projects/bai-buchai-p/datasets/users/tables/profiles || true
+          terraform import google_storage_bucket.creations bai-buchai-p-stb-usea1-creations || true
+          terraform import google_cloud_run_service.server projects/bai-buchai-p/locations/us-east1/services/bai-buchai-p-run-usea1-server || true
+          terraform import google_cloud_run_job.video_generator projects/bai-buchai-p/locations/us-east1/jobs/bai-buchai-p-crj-usea1-vidgen || true
 
       - name: ⚙️ Terraform Plan
         working-directory: ./terraform
-        run: |
-          terraform plan \
-            -var="gcp_svc_key_file=../service-account.json" \
-            -var="gcp_project_id=bai-buchai-p" \
-            -var="gcp_region=us-east1" \
-            -out=tfplan
+        run: terraform plan -out=tfplan
 
       - name: ⚙️ Terraform Apply
         working-directory: ./terraform
@@ -122,4 +87,6 @@ jobs:
 
       - name: 🧹 Cleanup
         if: always()
-        run: rm -f service-account.json 
+        run: |
+          rm -f service-account.json
+          rm -f terraform/terraform.tfvars 

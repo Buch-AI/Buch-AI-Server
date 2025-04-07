@@ -18,10 +18,10 @@ The Video Generator operates in two modes:
 2. **Job Execution**
    ```bash
    # Execute the task manually (for testing)
-   gcloud run jobs execute buch-ai-video-generator --args <creation_id>
+   gcloud run jobs execute bai-buchai-p-crj-usea1-vidgen --args <creation_id>
 
    # Example:
-   gcloud run jobs execute buch-ai-video-generator --args 6d49a9c0-57ab-403d-af55-c02ad3dfcd70
+   gcloud run jobs execute bai-buchai-p-crj-usea1-vidgen --args 6d49a9c0-57ab-403d-af55-c02ad3dfcd70
    ```
 
 3. **Processing Flow**

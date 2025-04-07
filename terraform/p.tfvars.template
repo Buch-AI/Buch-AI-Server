@@ -1,0 +1,9 @@
+gcp_svc_key_file = "service-account.json"
+gcp_project_id   = "bai-buchai-p"
+gcp_region       = "us-east1"
+
+server_image_tag    = "us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0"
+vidgen_image_tag = "us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-video-generator:0.1.0"
+
+auth_jwt_key = "{{AUTH_JWT_KEY}}"
+hf_api_key   = "{{HF_API_KEY}}" 

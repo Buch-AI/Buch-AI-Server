@@ -1,10 +1,60 @@
-# Google Cloud Artifact Registry
-
-# TODO: This will require `terraform import`
-
 # Google Cloud Run
 
-# TODO: This will require `terraform import`
+resource "google_cloud_run_service" "server" {
+  name     = "bai-buchai-p-run-usea1-server"
+  location = var.gcp_region
+
+  template {
+    spec {
+      containers {
+        image = var.server_image_tag
+
+        env {
+          name  = "AUTH_JWT_KEY"
+          value = var.auth_jwt_key
+        }
+
+        env {
+          name  = "HF_API_KEY"
+          value = var.hf_api_key
+        }
+      }
+    }
+  }
+
+  traffic {
+    percent         = 100
+    latest_revision = true
+  }
+}
+
+resource "google_cloud_run_service_iam_member" "server_public" {
+  service  = google_cloud_run_service.server.name
+  location = google_cloud_run_service.server.location
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
+resource "google_cloud_run_job" "video_generator" {
+  name     = "bai-buchai-p-crj-usea1-vidgen"
+  location = var.gcp_region
+
+  template {
+    template {
+      spec {
+        containers {
+          image = var.vidgen_image_tag
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].template[0].spec[0].containers[0].image
+    ]
+  }
+}
 
 # Google Cloud BigQuery
 

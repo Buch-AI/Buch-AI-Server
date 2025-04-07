@@ -528,7 +528,7 @@ async def generate_video(
             client = run_v2.JobsClient()
 
             parent = "projects/bai-buchai-p/locations/us-east1"
-            name = f"{parent}/jobs/buch-ai-video-generator"
+            name = f"{parent}/jobs/bai-buchai-p-crj-usea1-vidgen"
 
             # Execute the existing job
             operation = client.run_job(
