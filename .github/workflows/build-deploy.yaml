@@ -55,13 +55,13 @@ jobs:
           echo "Building server image..."
           docker build -t $SERVER_IMAGE_TAG --platform linux/amd64 \
             -f Dockerfile.server \
-            --build-arg BASE_IMAGE_TAG=$BASE_IMAGE_TAG \
+            --build-arg BASE_IMAGE=$BASE_IMAGE_TAG \
             .
 
           echo "Building Video Generator image..."
           docker build -t $VIDGEN_IMAGE_TAG --platform linux/amd64 \
             -f app/tasks/video_generator/Dockerfile.video-generator \
-            --build-arg BASE_IMAGE_TAG=$BASE_IMAGE_TAG \
+            --build-arg BASE_IMAGE=$BASE_IMAGE_TAG \
             .
 
           echo "SERVER_IMAGE_TAG=$SERVER_IMAGE_TAG" >> $GITHUB_ENV
