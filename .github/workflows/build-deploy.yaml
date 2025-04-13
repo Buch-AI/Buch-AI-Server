@@ -56,16 +56,12 @@ jobs:
           docker build -t $SERVER_IMAGE_TAG --platform linux/amd64 \
             -f Dockerfile.server \
             --build-arg BASE_IMAGE_TAG=$BASE_IMAGE_TAG \
-            --build-arg AUTH_JWT_KEY=${{ secrets.AUTH_JWT_KEY }} \
-            --build-arg HF_API_KEY=${{ secrets.HF_API_KEY }} \
             .
 
           echo "Building Video Generator image..."
           docker build -t $VIDGEN_IMAGE_TAG --platform linux/amd64 \
             -f app/tasks/video_generator/Dockerfile.video-generator \
             --build-arg BASE_IMAGE_TAG=$BASE_IMAGE_TAG \
-            --build-arg AUTH_JWT_KEY=${{ secrets.AUTH_JWT_KEY }} \
-            --build-arg HF_API_KEY=${{ secrets.HF_API_KEY }} \
             .
 
           echo "SERVER_IMAGE_TAG=$SERVER_IMAGE_TAG" >> $GITHUB_ENV
