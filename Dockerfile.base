@@ -38,16 +38,19 @@ ENV APP_ROOT /root
 WORKDIR $APP_ROOT
 
 # Define build arguments
-ARG AUTH_JWT_KEY
-ARG HF_API_KEY
+ARG BUCHAI_ENV
+ARG BUCHAI_AUTH_JWT_KEY
+ARG BUCHAI_HF_API_KEY
 
 # Set environment variables from build arguments
-ENV AUTH_JWT_KEY=$AUTH_JWT_KEY
-ENV HF_API_KEY=$HF_API_KEY
+ENV BUCHAI_ENV=$BUCHAI_ENV
+ENV BUCHAI_AUTH_JWT_KEY=$BUCHAI_AUTH_JWT_KEY
+ENV BUCHAI_HF_API_KEY=$BUCHAI_HF_API_KEY
 
 # Create .env file with environment variables
-RUN echo "AUTH_JWT_KEY=$AUTH_JWT_KEY" > $APP_ROOT/.env && \
-    echo "HF_API_KEY=$HF_API_KEY" >> $APP_ROOT/.env
+RUN echo "BUCHAI_ENV=$BUCHAI_ENV" > $APP_ROOT/.env && \
+    echo "BUCHAI_AUTH_JWT_KEY=$BUCHAI_AUTH_JWT_KEY" >> $APP_ROOT/.env && \
+    echo "BUCHAI_HF_API_KEY=$BUCHAI_HF_API_KEY" >> $APP_ROOT/.env
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/

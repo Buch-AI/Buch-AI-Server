@@ -48,8 +48,9 @@ jobs:
           echo "Building base image..."
           docker build -t $BASE_IMAGE_TAG --platform linux/amd64 \
             -f Dockerfile.base \
-            --build-arg AUTH_JWT_KEY=${{ secrets.AUTH_JWT_KEY }} \
-            --build-arg HF_API_KEY=${{ secrets.HF_API_KEY }} \
+            --build-arg BUCHAI_ENV=${{ secrets.BUCHAI_ENV }} \
+            --build-arg BUCHAI_AUTH_JWT_KEY=${{ secrets.BUCHAI_AUTH_JWT_KEY }} \
+            --build-arg BUCHAI_HF_API_KEY=${{ secrets.BUCHAI_HF_API_KEY }} \
             .
 
           echo "Building server image..."
