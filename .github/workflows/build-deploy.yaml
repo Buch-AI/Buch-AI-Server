@@ -1,4 +1,4 @@
-name: Deploy Infrastructure and Docker Images
+name: Build Docker Images and Deploy Infrastructure
 
 on:
   push:
@@ -41,18 +41,29 @@ jobs:
 
       - name: 🏗️ Build Docker images
         run: |
+          BASE_IMAGE_TAG="us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-base:0.1.0"
           SERVER_IMAGE_TAG="us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-server:0.1.0"
           VIDGEN_IMAGE_TAG="us-east1-docker.pkg.dev/bai-buchai-p/bai-buchai-p-gar-usea1-docker/buch-ai-video-generator:0.1.0"
 
+          echo "Building base image..."
+          docker build -t $BASE_IMAGE_TAG --platform linux/amd64 \
+            -f Dockerfile.base \
+            --build-arg AUTH_JWT_KEY=${{ secrets.AUTH_JWT_KEY }} \
+            --build-arg HF_API_KEY=${{ secrets.HF_API_KEY }} \
+            .
+
           echo "Building server image..."
           docker build -t $SERVER_IMAGE_TAG --platform linux/amd64 \
+            -f Dockerfile.server \
+            --build-arg BASE_IMAGE_TAG=$BASE_IMAGE_TAG \
             --build-arg AUTH_JWT_KEY=${{ secrets.AUTH_JWT_KEY }} \
             --build-arg HF_API_KEY=${{ secrets.HF_API_KEY }} \
             .
 
           echo "Building Video Generator image..."
           docker build -t $VIDGEN_IMAGE_TAG --platform linux/amd64 \
-            -f app/tasks/video_generator/Dockerfile \
+            -f app/tasks/video_generator/Dockerfile.video-generator \
+            --build-arg BASE_IMAGE_TAG=$BASE_IMAGE_TAG \
             --build-arg AUTH_JWT_KEY=${{ secrets.AUTH_JWT_KEY }} \
             --build-arg HF_API_KEY=${{ secrets.HF_API_KEY }} \
             .

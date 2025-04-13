@@ -1,5 +1,7 @@
 FROM python:3.12.9
+
 ENV PYTHONUNBUFFERED True
+ENV UV_NO_CACHE True
 
 # Install system dependencies including ImageMagick for MoviePy
 RUN apt-get update && \
@@ -34,10 +36,6 @@ RUN chmod 777 /tmp && \
 ENV APP_ROOT /root
 WORKDIR $APP_ROOT
 
-# Set environment variables
-ENV PYTHONPATH=$APP_ROOT
-ENV ENV=p
-
 # Define build arguments
 ARG AUTH_JWT_KEY
 ARG HF_API_KEY
@@ -46,15 +44,22 @@ ARG HF_API_KEY
 ENV AUTH_JWT_KEY=$AUTH_JWT_KEY
 ENV HF_API_KEY=$HF_API_KEY
 
+# Create .env file with environment variables
+RUN echo "AUTH_JWT_KEY=$AUTH_JWT_KEY" > $APP_ROOT/.env && \
+    echo "HF_API_KEY=$HF_API_KEY" >> $APP_ROOT/.env
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 # Copy only the requirements file first to leverage Docker cache
-RUN pip install --upgrade pip
 COPY pyproject.toml .
 COPY setup.py .
-RUN pip install --no-cache-dir -e .
+
+# Install dependencies using uv
+RUN uv sync --frozen
 
 # Copy only necessary files
 COPY config.py $APP_ROOT/
 COPY app/ $APP_ROOT/app/
 
-# Run the video generator
-ENTRYPOINT ["python", "-m", "app.tasks.video_generator.main"] 
+CMD ["echo", "This is the Buch AI base image."]

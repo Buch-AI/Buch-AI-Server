@@ -1,0 +1,4 @@
+ARG BASE_IMAGE
+FROM $BASE_IMAGE
+
+ENTRYPOINT ["uv", "run", "python", "-m", "app.tasks.video_generator.main"] 
