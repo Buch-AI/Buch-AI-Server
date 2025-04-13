@@ -1,11 +1,12 @@
-FROM python:3.12.9
+FROM python:3.12.9-slim
 
 ENV PYTHONUNBUFFERED True
 ENV UV_NO_CACHE True
 
 # Install system dependencies including ImageMagick for MoviePy
 RUN apt-get update && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
+    build-essential \
     imagemagick \
     libmagickwand-dev \
     ffmpeg \
