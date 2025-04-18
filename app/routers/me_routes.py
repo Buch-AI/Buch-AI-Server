@@ -58,7 +58,7 @@ class CreationsResponse(BaseModel):
 
 
 class StoryPartsResponse(BaseModel):
-    data: List[str]
+    data: List[List[str]]
 
 
 class ImagesResponse(BaseModel):
@@ -139,13 +139,14 @@ async def get_user_creations(
 )
 async def set_story_parts(
     creation_id: str,
-    story_parts: List[str],
+    story_parts: List[List[str]],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> StoryPartsResponse:
     """Set story parts for a specific creation.
 
-    Each story part will be saved as 1.txt in its respective numbered directory
-    to maintain compatibility with VideoGenerator's expected structure.
+    Each story part will be saved as numbered text files (1.txt, 2.txt, etc.) in its respective
+    numbered directory to maintain compatibility with VideoGenerator's expected structure.
+    Each inner list represents the sub-parts for a part, which will be saved as separate files.
     """
     try:
         # Initialize client
@@ -154,15 +155,21 @@ async def set_story_parts(
         # Get bucket reference
         bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
 
-        # Upload each story part as 1.txt
-        for index, story_part in enumerate(story_parts, start=1):
-            blob_path = f"{creation_id}/assets/{index}/1.txt"
-            blob = bucket.blob(blob_path)
-            blob.upload_from_string(story_part)
+        # Upload each part and its sub-parts
+        for part_index, sub_parts in enumerate(story_parts, start=1):
+            # Upload each sub-part as a numbered text file
+            for sub_part_index, sub_part in enumerate(sub_parts, start=1):
+                if not sub_part.strip():  # Skip empty sub-parts
+                    continue
+
+                blob_path = f"{creation_id}/assets/{part_index}/{sub_part_index}.txt"
+                blob = bucket.blob(blob_path)
+                blob.upload_from_string(sub_part)
 
         return StoryPartsResponse(data=story_parts)
 
     except Exception as e:
+        logger.error(f"Failed to set story parts: {str(e)}\n{format_exc()}")
         raise HTTPException(
             status_code=500, detail=f"Failed to set story parts: {str(e)}"
         )
@@ -176,8 +183,9 @@ async def get_story_parts(
 ) -> StoryPartsResponse:
     """Get story parts for a specific creation.
 
-    Reads 1.txt from each numbered directory to maintain compatibility with
-    VideoGenerator's expected structure.
+    Reads all TXT files from each numbered directory to maintain compatibility with
+    VideoGenerator's expected structure. Returns a list of lists where each inner list
+    contains all the text parts from a single directory.
     """
     try:
         # Initialize client
@@ -188,15 +196,30 @@ async def get_story_parts(
         story_parts = []
         part_number = 1
 
-        # Keep reading parts until we don't find the next one
+        # Keep reading parts until we don't find the next directory
         while True:
-            blob_path = f"{creation_id}/assets/{part_number}/1.txt"
-            blob = bucket.blob(blob_path)
+            part_texts = []
+            base_path = f"{creation_id}/assets/{part_number}/"
 
-            if not blob.exists():
+            # List all blobs in this directory
+            blobs = list(bucket.list_blobs(prefix=base_path))
+            txt_blobs = [blob for blob in blobs if blob.name.endswith(".txt")]
+
+            if not txt_blobs:
                 break
 
-            story_parts.append(blob.download_as_text())
+            # Sort the text files numerically
+            txt_blobs.sort(key=lambda x: int(x.name.split("/")[-1].split(".")[0]))
+
+            # Read each text file in order
+            for blob in txt_blobs:
+                text = blob.download_as_text().strip()
+                if text:  # Only add non-empty texts
+                    part_texts.append(text)
+
+            if part_texts:  # Only add parts that have text
+                story_parts.append(part_texts)
+
             part_number += 1
 
         if not story_parts:

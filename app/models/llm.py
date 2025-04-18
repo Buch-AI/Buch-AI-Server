@@ -74,11 +74,11 @@ class HuggingFaceConfigManager:
         return [
             {
                 "role": "system",
-                "content": "You are a story analyzer. Your job is to re-format and split story text into a pre-defined number of parts, inserting a [SPLIT] tag between each part. Remove empty lines if the text belongs to the same part. Do not include any other text in your response. Do not include section titles.",
+                "content": "You are a story analyzer. Your job is to re-format and split story text into a pre-defined number of parts and sub-parts, inserting a [PART] tag between each part and a [SUBPART] tag between each sub-part. Remove empty lines if the text belongs to the same part. Do not include any other text in your response. Do not include section titles.",
             },
             {
                 "role": "user",
-                "content": f"Split the following story into 4 parts: {_user_prompt}",
+                "content": f"Split the following story into 4 parts and 3 sub-parts per part: {_user_prompt}",
             },
         ]
 
@@ -117,6 +117,6 @@ class VertexAiConfigManager:
     def get_prompt_story_split(model_type: ModelType, user_prompt: str) -> str:
         _user_prompt = user_prompt.replace("\n", " ")
         return (
-            f"You are a story analyzer. Your job is to re-format and split story text into a pre-defined number of parts, inserting a [SPLIT] tag between each part. Remove empty lines if the text belongs to the same part. Do not include any other text in your response. Do not include section titles."
-            f"Split the following story into 4 parts: {_user_prompt}"
+            f"You are a story analyzer. Your job is to re-format and split story text into a pre-defined number of parts and sub-parts, inserting a [PART] tag between each part and a [SUBPART] tag between each sub-part. Remove empty lines if the text belongs to the same part. Do not include any other text in your response. Do not include section titles."
+            f"Split the following story into 4 parts and 3 sub-parts per part: {_user_prompt}"
         )

@@ -47,8 +47,8 @@ class LlmRouterService(ABC):
         pass
 
     @abstractmethod
-    async def split_story(self, request: GenerateStoryRequest) -> List[str]:
-        """Generate a story split into title and content."""
+    async def split_story(self, request: GenerateStoryRequest) -> List[List[str]]:
+        """Generate a story split into parts and sub-parts."""
         pass
 
 
@@ -118,7 +118,7 @@ class HuggingFaceRouterService(LlmRouterService):
             )
             raise HTTPException(status_code=500, detail=str(e))
 
-    async def split_story(self, request: GenerateStoryRequest) -> List[str]:
+    async def split_story(self, request: GenerateStoryRequest) -> List[List[str]]:
         try:
             model_config = HuggingFaceConfigManager.get_model_config(request.model_type)
             messages = HuggingFaceConfigManager.get_prompt_story_split(
@@ -133,15 +133,23 @@ class HuggingFaceRouterService(LlmRouterService):
                 top_p=model_config.top_p,
             )
 
-            # Parse the response into title and content
+            # Parse the response into parts and sub-parts
             text = response.choices[0].message.content
-            parts = text.split("[SPLIT]")
+            parts = text.split("[PART]")
 
-            # Strip newlines and limit parts
-            parts = [part.strip() for part in parts]
+            # Process each part to extract sub-parts and clean the text
+            result = []
+            for part in parts:
+                if part.strip():
+                    sub_parts = part.split("[SUBPART]")
+                    # Clean each sub-part
+                    cleaned_sub_parts = [
+                        sub_part.strip() for sub_part in sub_parts if sub_part.strip()
+                    ]
+                    if cleaned_sub_parts:
+                        result.append(cleaned_sub_parts)
 
-            # TODO: Set the upper limit of parts to 4
-            return parts[:4]
+            return result
         except Exception as e:
             logger.error(
                 f"Error splitting story with HuggingFace: {str(e)}\n{format_exc()}"
@@ -217,7 +225,7 @@ class VertexAiRouterService(LlmRouterService):
             )
             raise HTTPException(status_code=500, detail=str(e))
 
-    async def split_story(self, request: GenerateStoryRequest) -> List[str]:
+    async def split_story(self, request: GenerateStoryRequest) -> List[List[str]]:
         try:
             model_config = VertexAiConfigManager.get_model_config(request.model_type)
             prompt = VertexAiConfigManager.get_prompt_story_split(
@@ -238,15 +246,23 @@ class VertexAiRouterService(LlmRouterService):
                 generation_config=generation_config,
             )
 
-            # Parse the response into title and content
+            # Parse the response into parts and sub-parts
             text = response.text
-            parts = text.split("[SPLIT]")
+            parts = text.split("[PART]")
 
-            # Strip newlines and limit parts
-            parts = [part.strip() for part in parts]
+            # Process each part to extract sub-parts and clean the text
+            result = []
+            for part in parts:
+                if part.strip():
+                    sub_parts = part.split("[SUBPART]")
+                    # Clean each sub-part
+                    cleaned_sub_parts = [
+                        sub_part.strip() for sub_part in sub_parts if sub_part.strip()
+                    ]
+                    if cleaned_sub_parts:
+                        result.append(cleaned_sub_parts)
 
-            # TODO: Set the upper limit of parts to 4
-            return parts[:4]
+            return result
         except Exception as e:
             logger.error(
                 f"Error splitting story with Vertex AI: {str(e)}\n{format_exc()}"

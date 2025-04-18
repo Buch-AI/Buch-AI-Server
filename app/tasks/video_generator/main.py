@@ -341,7 +341,7 @@ class VideoGenerator:
         """
         # Video generation constants
         AUDIO_VOLUME = 0.5
-        WORDS_PER_MIN = 200
+        WORDS_PER_MIN = 220
         FONT_SIZE = 18
         FONT_COLOR = "white"
         FONT_NAME = str(
