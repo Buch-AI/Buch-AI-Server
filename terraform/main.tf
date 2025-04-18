@@ -7,7 +7,7 @@ resource "google_cloud_run_service" "server" {
   template {
     metadata {
       annotations = {
-        "run.googleapis.com/revision-suffix" = substr(md5(timestamp()), 0, 4)
+        "custom/revision-suffix" = substr(md5(timestamp()), 0, 4)
       }
     }
 
