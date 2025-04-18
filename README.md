@@ -1,6 +1,6 @@
 # Buch-AI-Server
 
-## Tech Stack
+## Tech stack
 
 [![My Skills](https://skillicons.dev/icons?i=docker,fastapi,gcp,githubactions,py,terraform)](https://skillicons.dev)
 
