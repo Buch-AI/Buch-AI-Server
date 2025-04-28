@@ -32,6 +32,17 @@ class GenerateStoryRequest(BaseModel):
     model_type: ModelType = ModelType.LITE
 
 
+class SummariseStoryRequest(BaseModel):
+    story: str
+    model_type: ModelType = ModelType.LITE
+
+
+class GenerateImagePromptsRequest(BaseModel):
+    story_summary: str
+    story_parts: List[str]
+    model_type: ModelType = ModelType.LITE
+
+
 class LlmRouterService(ABC):
     """Abstract base class for LLM router services."""
 
@@ -50,6 +61,18 @@ class LlmRouterService(ABC):
     @abstractmethod
     async def split_story(self, request: GenerateStoryRequest) -> List[List[str]]:
         """Generate a story split into parts and sub-parts."""
+        pass
+
+    @abstractmethod
+    async def summarise_story(self, request: SummariseStoryRequest) -> str:
+        """Summarise a story."""
+        pass
+
+    @abstractmethod
+    async def generate_image_prompts(
+        self, request: GenerateImagePromptsRequest
+    ) -> List[str]:
+        """Generate image prompts for each section of the story."""
         pass
 
 
@@ -154,6 +177,64 @@ class HuggingFaceRouterService(LlmRouterService):
         except Exception as e:
             logger.error(
                 f"Error splitting story with HuggingFace: {str(e)}\n{format_exc()}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            )
+
+    async def summarise_story(self, request: SummariseStoryRequest) -> str:
+        try:
+            model_config = HuggingFaceConfigManager.get_model_config(request.model_type)
+            messages = HuggingFaceConfigManager.get_prompt_story_summarise(
+                request.model_type, request.story
+            )
+
+            response = self.client.chat.completions.create(
+                messages=messages,
+                model=model_config.model_id,
+                max_tokens=model_config.max_tokens,
+                temperature=model_config.temperature,
+                top_p=model_config.top_p,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(
+                f"Error summarising story with HuggingFace: {str(e)}\n{format_exc()}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            )
+
+    async def generate_image_prompts(
+        self, request: GenerateImagePromptsRequest
+    ) -> List[str]:
+        try:
+            model_config = HuggingFaceConfigManager.get_model_config(request.model_type)
+
+            # Create a list to store the generated prompts
+            image_prompts = []
+
+            # For each story part
+            for part in request.story_parts:
+                part_messages = HuggingFaceConfigManager.get_prompt_image_generate(
+                    request.model_type, request.story_summary, part
+                )
+
+                part_response = self.client.chat.completions.create(
+                    messages=part_messages,
+                    model=model_config.model_id,
+                    max_tokens=model_config.max_tokens,
+                    temperature=model_config.temperature,
+                    top_p=model_config.top_p,
+                )
+
+                image_prompts.append(part_response.choices[0].message.content)
+
+            return image_prompts
+
+        except Exception as e:
+            logger.error(
+                f"Error generating image prompts with HuggingFace: {str(e)}\n{format_exc()}"
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
@@ -272,6 +353,75 @@ class VertexAiRouterService(LlmRouterService):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             )
 
+    async def summarise_story(self, request: SummariseStoryRequest) -> str:
+        try:
+            model_config = VertexAiConfigManager.get_model_config(request.model_type)
+            prompt = VertexAiConfigManager.get_prompt_story_summarise(
+                request.model_type, request.story
+            )
+
+            model = GenerativeModel(model_config.model_id)
+            generation_config = GenerationConfig(
+                max_output_tokens=model_config.max_tokens,
+                temperature=model_config.temperature,
+                top_p=model_config.top_p,
+            )
+
+            prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
+
+            response = model.generate_content(
+                prompt_content,
+                generation_config=generation_config,
+            )
+            return response.text
+        except Exception as e:
+            logger.error(
+                f"Error summarising story with Vertex AI: {str(e)}\n{format_exc()}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            )
+
+    async def generate_image_prompts(
+        self, request: GenerateImagePromptsRequest
+    ) -> List[str]:
+        try:
+            model_config = VertexAiConfigManager.get_model_config(request.model_type)
+
+            # Create a list to store the generated prompts
+            image_prompts = []
+
+            model = GenerativeModel(model_config.model_id)
+            generation_config = GenerationConfig(
+                max_output_tokens=model_config.max_tokens,
+                temperature=model_config.temperature,
+                top_p=model_config.top_p,
+            )
+
+            # For each story part
+            for part in request.story_parts:
+                part_prompt = VertexAiConfigManager.get_prompt_image_generate(
+                    request.model_type, request.story_summary, part
+                )
+
+                part_content = Content(role="user", parts=[Part.from_text(part_prompt)])
+                part_response = model.generate_content(
+                    part_content,
+                    generation_config=generation_config,
+                )
+
+                image_prompts.append(part_response.text)
+
+            return image_prompts
+
+        except Exception as e:
+            logger.error(
+                f"Error generating image prompts with Vertex AI: {str(e)}\n{format_exc()}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            )
+
 
 # Initialize the appropriate service based on provider
 if LLM_PROVIDER == "huggingface":
@@ -299,3 +449,13 @@ async def generate_story_stream(request: GenerateStoryRequest) -> StreamingRespo
 @llm_router.post("/split_story")
 async def split_story(request: GenerateStoryRequest) -> Response:
     return await llm_service.split_story(request)
+
+
+@llm_router.post("/summarise_story")
+async def summarise_story(request: SummariseStoryRequest) -> Response:
+    return await llm_service.summarise_story(request)
+
+
+@llm_router.post("/generate_image_prompts")
+async def generate_image_prompts(request: GenerateImagePromptsRequest) -> Response:
+    return await llm_service.generate_image_prompts(request)
