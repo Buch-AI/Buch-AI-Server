@@ -1,5 +1,6 @@
+from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Dict
+from typing import Any, Dict
 
 from pydantic import BaseModel, Field
 
@@ -22,7 +23,31 @@ class ModelType(str, Enum):
     MAX = "max"
 
 
-class HuggingFaceConfigManager:
+class ConfigManager(ABC):
+    """Abstract base class for LLM configuration managers."""
+
+    model_configs: Dict[ModelType, ModelConfig] = {}
+
+    @staticmethod
+    @abstractmethod
+    def get_model_config(model_type: ModelType) -> ModelConfig:
+        """Get the configuration for a specific model type."""
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def get_prompt_story_generate(model_type: ModelType, user_prompt: str) -> Any:
+        """Get the formatted prompt for story generation."""
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def get_prompt_story_split(model_type: ModelType, user_prompt: str) -> Any:
+        """Get the formatted prompt for story splitting."""
+        pass
+
+
+class HuggingFaceConfigManager(ConfigManager):
     # Define preset configurations for different model types
     model_configs: Dict[ModelType, ModelConfig] = {
         ModelType.LITE: ModelConfig(
@@ -83,7 +108,7 @@ class HuggingFaceConfigManager:
         ]
 
 
-class VertexAiConfigManager:
+class VertexAiConfigManager(ConfigManager):
     # Define preset configurations for different model types
     model_configs: Dict[ModelType, ModelConfig] = {
         ModelType.LITE: ModelConfig(

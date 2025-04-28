@@ -18,6 +18,7 @@ from app.models.llm import (
 from config import HF_API_KEY
 
 # TODO: Depending on which provider is avaiable, switch.
+# TODO: Make this an environment variable.
 # Global LLM provider setting
 LLM_PROVIDER: Literal["huggingface", "vertexai"] = "vertexai"
 
