@@ -138,6 +138,7 @@ dependencies = [
     { name = "google-cloud-aiplatform" },
     { name = "google-cloud-bigquery" },
     { name = "google-cloud-run" },
+    { name = "google-cloud-texttospeech" },
     { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "moviepy" },
@@ -166,6 +167,7 @@ requires-dist = [
     { name = "google-cloud-aiplatform", specifier = ">=1.86.0" },
     { name = "google-cloud-bigquery", specifier = ">=3.11.0" },
     { name = "google-cloud-run", specifier = ">=0.10.17" },
+    { name = "google-cloud-texttospeech", specifier = ">=2.26.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "huggingface-hub", specifier = ">=0.29.2" },
     { name = "moviepy", specifier = ">=1.0.3" },
@@ -554,6 +556,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/36/76/4d965702e96bb67976e755bed9828fa50306dca003dbee08b67f41dd265e/google_cloud_storage-2.19.0.tar.gz", hash = "sha256:cd05e9e7191ba6cb68934d8eb76054d9be4562aa89dbc4236feee4d7d51342b2", size = 5535488 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d5/94/6db383d8ee1adf45dc6c73477152b82731fa4c4a46d9c1932cc8757e0fd4/google_cloud_storage-2.19.0-py2.py3-none-any.whl", hash = "sha256:aeb971b5c29cf8ab98445082cbfe7b161a1f48ed275822f59ed3f1524ea54fba", size = 131787 },
+]
+
+[[package]]
+name = "google-cloud-texttospeech"
+version = "2.26.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5b/3d/214506e1163138159a3ba172adc0945970843ce9a8c5332db06772806dff/google_cloud_texttospeech-2.26.0.tar.gz", hash = "sha256:43af1b88a6b9becde69a3bbf8aa80cdfa5f12f8999e56bcf9dec374354ed7f6a", size = 181084 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f0/eb/fb3a2c16f5612c4a131b2bfa242aaf7800ec0cee479759d9de2cc919ba70/google_cloud_texttospeech-2.26.0-py3-none-any.whl", hash = "sha256:837835aadeb261983d139ef1c5e60c99f80199e22330bf4f62e217360b9e07b8", size = 188122 },
 ]
 
 [[package]]

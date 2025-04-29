@@ -1,30 +1,29 @@
 import logging
 import os
-import platform
-import subprocess
 import tempfile
 import uuid
 from io import BytesIO
-from typing import List, Optional
+from typing import List
 from urllib.parse import urlparse
 
 import numpy
 from google.cloud import storage
-from moviepy.config import change_settings
 from moviepy.editor import (
     AudioFileClip,
+    CompositeAudioClip,
     CompositeVideoClip,
     ImageClip,
     TextClip,
-    afx,
     concatenate_videoclips,
 )
 from moviepy.video.fx.fadein import fadein
 from moviepy.video.fx.fadeout import fadeout
 from PIL import Image
-from pydantic import BaseModel, Field
 
-from config import ASSETS_P_DIR, GCLOUD_STB_CREATIONS_NAME
+from app.tasks.video_generator.dubber import GoogleCloudDubber
+from app.tasks.video_generator.imagemagick import initialize_imagemagick
+from app.tasks.video_generator.video_slide import VideoSlide
+from config import ASSETS_P_DIR, ENV, GCLOUD_STB_CREATIONS_NAME
 
 # Configure logging
 logging.basicConfig(
@@ -32,71 +31,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-def get_imagemagick_binary() -> Optional[str]:
-    """
-    Detect ImageMagick binary path across different environments.
-
-    Returns:
-        str: Path to ImageMagick binary or None if not found
-    """
-    # Check if MAGICK_HOME environment variable is set (Docker/production)
-    magick_home = os.getenv("MAGICK_HOME")
-    if magick_home:
-        binary_path = os.path.join(magick_home, "bin", "convert")
-        if os.path.exists(binary_path):
-            return binary_path
-
-    # Common paths based on OS
-    if platform.system() == "Windows":
-        common_paths = [
-            r"C:\Program Files\ImageMagick-7.Q16\convert.exe",
-            r"C:\Program Files\ImageMagick-7.Q16-HDRI\convert.exe",
-        ]
-    else:  # Unix-like systems (Linux, macOS)
-        common_paths = [
-            "/usr/bin/convert",
-            "/usr/local/bin/convert",
-            "/opt/homebrew/bin/convert",  # Common macOS Homebrew path
-        ]
-
-    # Check common paths
-    for path in common_paths:
-        if os.path.exists(path):
-            return path
-
-    # Try to find using which command on Unix-like systems
-    try:
-        if platform.system() != "Windows":
-            result = subprocess.run(
-                ["which", "convert"], capture_output=True, text=True, check=True
-            )
-            if result.stdout:
-                return result.stdout.strip()
-    except subprocess.SubprocessError:
-        pass
-
-    return None
-
-
-# Configure MoviePy to use ImageMagick
-imagemagick_binary = get_imagemagick_binary()
-if imagemagick_binary is None:
-    raise RuntimeError(
-        "ImageMagick not found. Please install ImageMagick and ensure "
-        "'convert' binary is available in your system PATH"
-    )
-
-change_settings({"IMAGEMAGICK_BINARY": imagemagick_binary})
-
-
-class VideoSlide(BaseModel):
-    """Model representing a single slide in the video."""
-
-    image: bytes = Field(..., description="Raw bytes of the image")
-    captions: List[str] = Field(
-        ..., min_items=1, description="List of captions to show sequentially"
-    )
+# Initialize ImageMagick
+initialize_imagemagick()
 
 
 class VideoGenerator:
@@ -339,9 +275,9 @@ class VideoGenerator:
         Returns:
             bytes: The generated video as bytes
         """
+        logger.info(f"Starting video generation from {len(slides)} slides")
+
         # Video generation constants
-        AUDIO_VOLUME = 0.5
-        WORDS_PER_MIN = 220
         FONT_SIZE = 18
         FONT_COLOR = "white"
         FONT_NAME = str(
@@ -356,114 +292,201 @@ class VideoGenerator:
         if not slides:
             raise ValueError("No slides provided")
 
+        # Initialize the dubber
+        logger.info("Initializing Google Cloud Dubber")
+        dubber = GoogleCloudDubber(
+            language_code="en-US",
+            voice_name="en-US-Neural2-J",
+            speaking_rate=1.0,
+            pitch=0.0,
+        )
+
+        # Generate audio for all slides
+        logger.info("Generating audio for all slides")
+        _slides = dubber.create_audio_from_slides(slides)
+        logger.info(f"Audio generation complete for {len(_slides)} slides")
+
         slide_clips = []
 
-        for slide in slides:
+        for slide_idx, slide in enumerate(_slides, 1):
+            logger.info(f"Processing slide {slide_idx}/{len(_slides)}")
+
+            # Verify slide has captions and audio
+            if not hasattr(slide, "caption_dubs") or slide.caption_dubs is None:
+                logger.error(f"Slide {slide_idx} has no caption_dubs attribute")
+                raise ValueError(f"Slide {slide_idx} is missing audio data")
+
+            if len(slide.captions) != len(slide.caption_dubs):
+                logger.error(
+                    f"Slide {slide_idx} has {len(slide.captions)} captions but {len(slide.caption_dubs)} audio clips"
+                )
+                raise ValueError(
+                    f"Caption and audio count mismatch for slide {slide_idx}"
+                )
+
             # Convert image bytes to PIL Image
             image = Image.open(BytesIO(slide.image))
+            logger.info(f"Slide {slide_idx} image size: {image.width}x{image.height}")
 
             # Create image clip
             image_clip = ImageClip(numpy.array(image))
 
-            # Calculate durations for each caption based on text content
-            caption_durations = [
-                VideoGenerator.get_caption_duration(caption, WORDS_PER_MIN)
-                for caption in slide.captions
-            ]
-
             caption_clips = []
             current_time = 0
 
-            for idx, (caption, duration) in enumerate(
-                zip(slide.captions, caption_durations)
+            # Create a list to store all audio clips for this slide
+            audio_clips = []
+
+            logger.info(
+                f"Processing {len(slide.captions)} captions for slide {slide_idx}"
+            )
+            for idx, (caption, audio_bytes) in enumerate(
+                zip(slide.captions, slide.caption_dubs)
             ):
-                # Create main text clip first to get its size
-                text_clip = TextClip(
-                    caption,
-                    fontsize=FONT_SIZE,
-                    color=FONT_COLOR,
-                    method="caption",
-                    size=(
-                        image.width - 2 * CAPTION_PADDING,
-                        None,
-                    ),  # Add padding on sides
-                    font=FONT_NAME,
-                )
-
-                # Get text clip size and calculate positions
-                text_height = text_clip.size[1]
-                text_y_pos = (
-                    image.height - text_height - CAPTION_PADDING
-                )  # Add bottom padding
-                gradient_height = int(
-                    text_height * 2
-                )  # Make gradient taller for more fade
-
-                # Create gradient background
-                gradient = VideoGenerator.get_gradient_background(
-                    width=image.width,
-                    height=gradient_height,
-                    alpha_bottom=1.0,  # Fully opaque at bottom
-                    alpha_top=0.0,  # Fully transparent at top
-                )
-
-                # Create gradient clip
-                gradient_clip = ImageClip(gradient)
-
-                # Create shadow text clip
-                shadow_clip = TextClip(
-                    caption,
-                    fontsize=FONT_SIZE,
-                    color="black",
-                    method="caption",
-                    size=(
-                        image.width - 2 * CAPTION_PADDING,
-                        None,
-                    ),  # Add padding on sides
-                    font=FONT_NAME,
-                )
-
-                # Position clips
-                gradient_y_pos = image.height - gradient_height
-                gradient_clip = gradient_clip.set_position(("center", gradient_y_pos))
-                shadow_clip = shadow_clip.set_position(
-                    ("center", text_y_pos + 2)
-                ).set_opacity(0.8)
-                text_clip = text_clip.set_position(("center", text_y_pos))
-
-                # Set timing for all clips using calculated duration
-                gradient_clip = gradient_clip.set_duration(duration)
-                shadow_clip = shadow_clip.set_duration(duration)
-                text_clip = text_clip.set_duration(duration)
-
-                # Add fade transitions
-                if (
-                    duration > 2 * FADE_DURATION
-                ):  # Only add fades if clip is long enough
-                    gradient_clip = gradient_clip.fx(fadein, FADE_DURATION).fx(
-                        fadeout, FADE_DURATION
-                    )
-                    shadow_clip = shadow_clip.fx(fadein, FADE_DURATION).fx(
-                        fadeout, FADE_DURATION
-                    )
-                    text_clip = text_clip.fx(fadein, FADE_DURATION).fx(
-                        fadeout, FADE_DURATION
+                # Create temporary audio file
+                with tempfile.NamedTemporaryFile(
+                    suffix=".mp3", delete=False
+                ) as temp_audio:
+                    temp_audio.write(audio_bytes)
+                    temp_audio_path = temp_audio.name
+                    logger.info(
+                        f"Created temporary audio file at {temp_audio_path} with {len(audio_bytes)} bytes"
                     )
 
-                # Set start times
-                gradient_clip = gradient_clip.set_start(current_time)
-                shadow_clip = shadow_clip.set_start(current_time)
-                text_clip = text_clip.set_start(current_time)
+                try:
+                    # Load audio clip to get duration
+                    audio_clip = AudioFileClip(temp_audio_path)
 
-                current_time += duration
+                    # Check if audio clip is valid
+                    if audio_clip.duration <= 0:
+                        logger.error(
+                            f"Invalid audio clip duration: {audio_clip.duration}"
+                        )
+                        continue  # Skip this caption
 
-                # Add clips in order: gradient (bottom), shadow (middle), text (top)
-                caption_clips.extend([gradient_clip, shadow_clip, text_clip])
+                    duration = audio_clip.duration
+                    logger.info(
+                        f"Audio clip duration for caption {idx + 1}: {duration} seconds"
+                    )
+
+                    # Create main text clip first to get its size
+                    text_clip = TextClip(
+                        caption,
+                        fontsize=FONT_SIZE,
+                        color=FONT_COLOR,
+                        method="caption",
+                        size=(
+                            image.width - 2 * CAPTION_PADDING,
+                            None,
+                        ),  # Add padding on sides
+                        font=FONT_NAME,
+                    )
+
+                    # Get text clip size and calculate positions
+                    text_height = text_clip.size[1]
+                    text_y_pos = (
+                        image.height - text_height - CAPTION_PADDING
+                    )  # Add bottom padding
+                    gradient_height = int(
+                        text_height * 2
+                    )  # Make gradient taller for more fade
+
+                    # Create gradient background
+                    gradient = VideoGenerator.get_gradient_background(
+                        width=image.width,
+                        height=gradient_height,
+                        alpha_bottom=1.0,  # Fully opaque at bottom
+                        alpha_top=0.0,  # Fully transparent at top
+                    )
+
+                    # Create gradient clip
+                    gradient_clip = ImageClip(gradient)
+
+                    # Create shadow text clip
+                    shadow_clip = TextClip(
+                        caption,
+                        fontsize=FONT_SIZE,
+                        color="black",
+                        method="caption",
+                        size=(
+                            image.width - 2 * CAPTION_PADDING,
+                            None,
+                        ),  # Add padding on sides
+                        font=FONT_NAME,
+                    )
+
+                    # Position clips
+                    gradient_y_pos = image.height - gradient_height
+                    gradient_clip = gradient_clip.set_position(
+                        ("center", gradient_y_pos)
+                    )
+                    shadow_clip = shadow_clip.set_position(
+                        ("center", text_y_pos + 2)
+                    ).set_opacity(0.8)
+                    text_clip = text_clip.set_position(("center", text_y_pos))
+
+                    # Set timing for all clips using audio duration
+                    gradient_clip = gradient_clip.set_duration(duration)
+                    shadow_clip = shadow_clip.set_duration(duration)
+                    text_clip = text_clip.set_duration(duration)
+
+                    # Add fade transitions
+                    if (
+                        duration > 2 * FADE_DURATION
+                    ):  # Only add fades if clip is long enough
+                        gradient_clip = gradient_clip.fx(fadein, FADE_DURATION).fx(
+                            fadeout, FADE_DURATION
+                        )
+                        shadow_clip = shadow_clip.fx(fadein, FADE_DURATION).fx(
+                            fadeout, FADE_DURATION
+                        )
+                        text_clip = text_clip.fx(fadein, FADE_DURATION).fx(
+                            fadeout, FADE_DURATION
+                        )
+
+                    # Set start times
+                    gradient_clip = gradient_clip.set_start(current_time)
+                    shadow_clip = shadow_clip.set_start(current_time)
+                    text_clip = text_clip.set_start(current_time)
+
+                    # Set the start time for this audio clip to match the text
+                    audio_clip = audio_clip.set_start(current_time)
+                    audio_clips.append(audio_clip)
+
+                    current_time += duration
+
+                    # Add clips in order: gradient (bottom), shadow (middle), text (top)
+                    caption_clips.extend([gradient_clip, shadow_clip, text_clip])
+
+                except Exception as e:
+                    logger.error(
+                        f"Error processing audio clip: {str(e)}", exc_info=True
+                    )
+                finally:
+                    # Clean up temporary audio file
+                    if os.path.exists(temp_audio_path):
+                        os.remove(temp_audio_path)
+                        logger.info(f"Removed temporary audio file {temp_audio_path}")
 
             # Create composite of image and all captions
-            slide_duration = sum(caption_durations)
+            slide_duration = current_time
             image_clip = image_clip.set_duration(slide_duration)
-            slide_composite = CompositeVideoClip([image_clip] + caption_clips)
+
+            # Combine all audio clips for this slide
+            if audio_clips:
+                logger.info(
+                    f"Adding {len(audio_clips)} audio clips to slide {slide_idx}"
+                )
+                slide_audio = CompositeAudioClip(audio_clips)
+                slide_composite = CompositeVideoClip([image_clip] + caption_clips)
+                slide_composite = slide_composite.set_audio(slide_audio)
+                logger.info(f"Successfully added audio to slide {slide_idx}")
+            else:
+                logger.warning(f"No audio clips to add to slide {slide_idx}")
+                slide_composite = CompositeVideoClip([image_clip] + caption_clips)
+
+            # Ensure slide_composite has the correct duration
+            slide_composite = slide_composite.set_duration(slide_duration)
 
             # Add fade transitions between slides
             if slide_duration > 2 * FADE_DURATION:
@@ -477,30 +500,22 @@ class VideoGenerator:
             slide_clips.append(slide_composite)
 
         # Concatenate all slides
+        logger.info(f"Concatenating {len(slide_clips)} slide clips")
         final_clip = concatenate_videoclips(slide_clips, method="compose")
         total_duration = final_clip.duration
+        logger.info(f"Final video duration: {total_duration} seconds")
 
-        # Load and prepare audio
-        audio = AudioFileClip(VideoGenerator.SAMPLE_AUDIO_PATH)
-
-        # Loop audio if video is longer than audio
-        if total_duration > audio.duration:
-            num_loops = int(total_duration / audio.duration) + 1
-            audio = afx.audio_loop(audio, nloops=num_loops)
-
-        # Set audio duration to match video
-        audio = audio.set_duration(total_duration)
-
-        # Set audio volume
-        audio = audio.volumex(AUDIO_VOLUME)
-
-        # Add audio to final clip
-        final_clip = final_clip.set_audio(audio)
+        # Check if final clip has audio
+        if final_clip.audio is None:
+            logger.error("Final video has no audio track")
+        else:
+            logger.info("Final video has audio track")
 
         # Create a temporary file
         temp_output_path = os.path.join(
             tempfile.gettempdir(), f"video_{uuid.uuid4()}.mp4"
         )
+        logger.info(f"Writing final video to {temp_output_path}")
 
         try:
             # Write to temporary file
@@ -510,16 +525,18 @@ class VideoGenerator:
                 audio_codec=AUDIO_CODEC,
                 fps=VIDEO_FPS,
             )
+            logger.info(f"Successfully wrote video to {temp_output_path}")
 
             # Read the temporary file into bytes
             with open(temp_output_path, "rb") as f:
                 video_bytes = f.read()
+            logger.info(f"Read {len(video_bytes)} bytes from {temp_output_path}")
 
             # Close clips to free up resources
-            audio.close()
             final_clip.close()
             for clip in slide_clips:
                 clip.close()
+            logger.info("Closed all clips")
 
             return video_bytes
 
@@ -527,6 +544,7 @@ class VideoGenerator:
             # Clean up temporary file
             if os.path.exists(temp_output_path):
                 os.remove(temp_output_path)
+                logger.info(f"Removed temporary file {temp_output_path}")
 
 
 if __name__ == "__main__":
@@ -550,12 +568,20 @@ if __name__ == "__main__":
         # Generate video
         video_bytes = VideoGenerator.create_video_from_slides(slides=slides)
 
-        # Upload to GCS
-        storage_client = storage.Client()
-        bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
-        video_blob_path = f"{creation_id}/assets/video.mp4"
-        video_blob = bucket.blob(video_blob_path)
-        video_blob.upload_from_string(video_bytes, content_type="video/mp4")
+        if ENV == "d":
+            # Save video locally in current directory
+            local_video_path = f"video_{creation_id}.mp4"
+            with open(local_video_path, "wb") as f:
+                f.write(video_bytes)
+            logger.info(f"Video saved locally at: {local_video_path}")
+
+        if ENV == "p":
+            # Upload to GCS
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
+            video_blob_path = f"{creation_id}/assets/video.mp4"
+            video_blob = bucket.blob(video_blob_path)
+            video_blob.upload_from_string(video_bytes, content_type="video/mp4")
 
     except Exception as e:
         logger.error(
