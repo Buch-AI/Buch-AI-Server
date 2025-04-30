@@ -45,9 +45,7 @@ class ImageRouterService(ABC):
 class PollinationsAiRouterService(ImageRouterService):
     """Pollinations AI implementation of the image router service."""
 
-    API_URL = (
-        "https://image.pollinations.ai/prompt/{prompt}?width={width}&height={height}"
-    )
+    API_URL = "https://image.pollinations.ai/prompt/{prompt}?width={width}&height={height}&nologo={nologo}&private={private}&safe={safe}"
 
     async def generate_image(
         self, request: ImageGenerationRequest
@@ -60,7 +58,12 @@ class PollinationsAiRouterService(ImageRouterService):
             # URL-encode the prompt
             encoded_prompt = quote(request.prompt)
             image_url = self.API_URL.format(
-                prompt=encoded_prompt, width=request.width, height=request.height
+                prompt=encoded_prompt,
+                width=request.width,
+                height=request.height,
+                nologo="true",
+                private="false",
+                safe="true",
             )
 
             # Download the image
