@@ -63,6 +63,10 @@ class CreationResponse(BaseModel):
     data: str
 
 
+class CostCentreResponse(BaseModel):
+    data: str
+
+
 class CreationsResponse(BaseModel):
     data: List[CreationProfile]
 
@@ -655,7 +659,6 @@ async def generate_video(
         )
 
 
-# TODO: Rename this.
 @me_router.post("/creation/generate", response_model=CreationResponse)
 async def generate_creation(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -708,6 +711,88 @@ async def generate_creation(
         logger.error(f"Failed to generate creation: {str(e)}\n{format_exc()}")
         raise HTTPException(
             status_code=500, detail=f"Failed to generate creation: {str(e)}"
+        )
+
+
+@me_router.post(
+    "/creation/{creation_id}/cost_centre/generate", response_model=CostCentreResponse
+)
+async def generate_cost_centre(
+    creation_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> CostCentreResponse:
+    """Generate a new cost centre for a specific creation."""
+    try:
+        # Initialize clients
+        bigquery_client = bigquery.Client()
+
+        # First, verify the creation belongs to the user
+        verify_query = """
+        SELECT creation_id
+        FROM `bai-buchai-p.creations.profiles`
+        WHERE creation_id = @creation_id
+        AND user_id = @user_id
+        """
+
+        verify_job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
+                bigquery.ScalarQueryParameter(
+                    "user_id", "STRING", current_user.username
+                ),
+            ]
+        )
+
+        verify_job = bigquery_client.query(verify_query, verify_job_config)
+        if not list(verify_job.result()):
+            logger.error(
+                f"Creation {creation_id} not found or unauthorized\n{format_exc()}"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail="Creation not found or you don't have permission to create a cost centre for it",
+            )
+
+        # Generate a unique cost centre ID
+        cost_centre_id = str(uuid.uuid4())
+
+        # Insert the cost centre
+        query = """
+        INSERT INTO `bai-buchai-p.creations.cost_centres` (
+            cost_centre_id, creation_id, user_id, created_at, cost
+        )
+        VALUES (
+            @cost_centre_id,
+            @creation_id,
+            @user_id,
+            CURRENT_TIMESTAMP(),
+            0
+        )
+        """
+
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter(
+                    "cost_centre_id", "STRING", cost_centre_id
+                ),
+                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
+                bigquery.ScalarQueryParameter(
+                    "user_id", "STRING", current_user.username
+                ),
+            ]
+        )
+
+        query_job = bigquery_client.query(query, job_config=job_config)
+        query_job.result()  # Wait for the query to complete
+
+        return CostCentreResponse(data=cost_centre_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate cost centre: {str(e)}\n{format_exc()}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate cost centre: {str(e)}"
         )
 
 

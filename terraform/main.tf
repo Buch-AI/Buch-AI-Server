@@ -66,6 +66,40 @@ resource "google_bigquery_dataset" "creations" {
   description = "Dataset for storing creation-related data"
 }
 
+resource "google_bigquery_table" "creations_cost_centres" {
+  dataset_id  = google_bigquery_dataset.creations.dataset_id
+  table_id    = "cost_centres"
+  description = "Table for storing creation cost centres"
+
+  schema = jsonencode([
+    {
+      name = "cost_centre_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "creation_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "user_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "created_at"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
+    },
+    {
+      name = "cost"
+      type = "NUMERIC"
+      mode = "REQUIRED"
+    }
+  ])
+}
+
 resource "google_bigquery_table" "creations_profiles" {
   dataset_id  = google_bigquery_dataset.creations.dataset_id
   table_id    = "profiles"
