@@ -139,6 +139,7 @@ jobs:
           terraform import google_bigquery_dataset.tasks projects/bai-buchai-p/datasets/tasks || true
           terraform import google_bigquery_dataset.users projects/bai-buchai-p/datasets/users || true
           terraform import google_bigquery_table.creations_profiles projects/bai-buchai-p/datasets/creations/tables/profiles || true
+          terraform import google_bigquery_table.creations_cost_centres projects/bai-buchai-p/datasets/creations/tables/cost_centres || true
           terraform import google_bigquery_table.tasks_video_generator projects/bai-buchai-p/datasets/tasks/tables/video_generator || true
           terraform import google_bigquery_table.users_auth projects/bai-buchai-p/datasets/users/tables/auth || true
           terraform import google_bigquery_table.users_profiles projects/bai-buchai-p/datasets/users/tables/profiles || true
