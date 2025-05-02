@@ -131,14 +131,16 @@ class LlmRouterService(ABC):
 
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
-                    bigquery.ScalarQueryParameter("additional_cost", "FLOAT", cost),
+                    bigquery.ScalarQueryParameter("additional_cost", "NUMERIC", cost),
                     bigquery.ScalarQueryParameter(
                         "cost_centre_id", "STRING", cost_centre_id
                     ),
                 ]
             )
 
-            await bigquery_client.query_async(query, job_config=job_config)
+            # Use query instead of query_async
+            query_job = bigquery_client.query(query, job_config=job_config)
+            query_job.result()  # Wait for the query to complete
         except Exception as e:
             logging.error(f"Failed to update cost center: {e}")
             # Don't raise exception to prevent disrupting the main flow
