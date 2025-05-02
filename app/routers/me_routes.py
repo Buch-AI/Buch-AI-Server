@@ -49,6 +49,16 @@ class CreationProfile(BaseModel):
     is_active: bool
 
 
+class CreationProfileUpdate(BaseModel):
+    """Model for updating editable creation profile fields."""
+
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None  # draft, published, archived
+    visibility: Optional[str] = None  # public, private
+    tags: Optional[List[str]] = None
+
+
 class CreationResponse(BaseModel):
     data: str
 
@@ -773,4 +783,127 @@ async def delete_creation(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to delete creation: {str(e)}",
+        )
+
+
+@me_router.patch("/creation/{creation_id}/update", response_model=CreationResponse)
+async def update_creation(
+    creation_id: str,
+    update_data: CreationProfileUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> CreationResponse:
+    """Update editable fields for a specific creation."""
+    try:
+        # Initialize BigQuery client
+        bigquery_client = bigquery.Client()
+
+        # First, verify the creation belongs to the user
+        verify_query = """
+        SELECT creation_id
+        FROM `bai-buchai-p.creations.profiles`
+        WHERE creation_id = @creation_id
+        AND user_id = @user_id
+        """
+
+        verify_job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
+                bigquery.ScalarQueryParameter(
+                    "user_id", "STRING", current_user.username
+                ),
+            ]
+        )
+
+        verify_job = bigquery_client.query(verify_query, verify_job_config)
+        if not list(verify_job.result()):
+            logger.error(
+                f"Creation {creation_id} not found or unauthorized\n{format_exc()}"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail="Creation not found or you don't have permission to update it",
+            )
+
+        # Build the update query dynamically based on provided fields
+        update_fields = []
+        query_parameters = [
+            bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
+            bigquery.ScalarQueryParameter("user_id", "STRING", current_user.username),
+        ]
+
+        if update_data.title is not None:
+            update_fields.append("title = @title")
+            query_parameters.append(
+                bigquery.ScalarQueryParameter("title", "STRING", update_data.title)
+            )
+
+        if update_data.description is not None:
+            update_fields.append("description = @description")
+            query_parameters.append(
+                bigquery.ScalarQueryParameter(
+                    "description", "STRING", update_data.description
+                )
+            )
+
+        if update_data.status is not None:
+            # Validate status value
+            valid_statuses = ["draft", "published", "archived"]
+            if update_data.status not in valid_statuses:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid status value. Must be one of: {', '.join(valid_statuses)}",
+                )
+            update_fields.append("status = @status")
+            query_parameters.append(
+                bigquery.ScalarQueryParameter("status", "STRING", update_data.status)
+            )
+
+        if update_data.visibility is not None:
+            # Validate visibility value
+            valid_visibilities = ["public", "private"]
+            if update_data.visibility not in valid_visibilities:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid visibility value. Must be one of: {', '.join(valid_visibilities)}",
+                )
+            update_fields.append("visibility = @visibility")
+            query_parameters.append(
+                bigquery.ScalarQueryParameter(
+                    "visibility", "STRING", update_data.visibility
+                )
+            )
+
+        if update_data.tags is not None:
+            update_fields.append("tags = @tags")
+            query_parameters.append(
+                bigquery.ArrayQueryParameter("tags", "STRING", update_data.tags)
+            )
+
+        # Always update the updated_at timestamp
+        update_fields.append("updated_at = CURRENT_TIMESTAMP()")
+
+        # If no fields to update, return early
+        if not update_fields:
+            return CreationResponse(data=creation_id)
+
+        # Construct and execute the update query
+        update_query = f"""
+        UPDATE `bai-buchai-p.creations.profiles`
+        SET {", ".join(update_fields)}
+        WHERE creation_id = @creation_id
+        AND user_id = @user_id
+        """
+
+        update_job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+        update_job = bigquery_client.query(update_query, update_job_config)
+        update_job.result()  # Wait for the query to complete
+
+        return CreationResponse(data=creation_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update creation: {str(e)}\n{format_exc()}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update creation: {str(e)}"
         )
