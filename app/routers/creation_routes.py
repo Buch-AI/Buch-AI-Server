@@ -56,14 +56,6 @@ class CreationProfileUpdate(BaseModel):
     tags: Optional[List[str]] = None
 
 
-class CreationResponse(BaseModel):
-    data: str
-
-
-class CostCentreResponse(BaseModel):
-    data: str
-
-
 class StoryPartsResponse(BaseModel):
     data: List[List[str]]
 
@@ -76,15 +68,19 @@ class VideoResponse(BaseModel):
     data: str  # Base64 encoded video
 
 
-class GenerateResponse(BaseModel):
-    data: str  # Base64 encoded video
-
-
 class TaskStatusResponse(BaseModel):
     """Model representing a Google Cloud Run Job status."""
 
     status: str  # pending, running, completed, failed
     message: Optional[str] = None
+
+
+class CreationResponse(BaseModel):
+    data: str
+
+
+class CostCentreResponse(BaseModel):
+    data: str
 
 
 @creation_router.post(
