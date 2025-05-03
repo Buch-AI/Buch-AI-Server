@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers.auth_routes import auth_router
+from app.routers.creation_routes import creation_router
 from app.routers.database_routes import database_router
 from app.routers.image_routes import image_router
 from app.routers.llm_routes import llm_router
@@ -35,14 +36,13 @@ def root():
 
 # Include the routers in the main app with a prefix
 app.include_router(auth_router, prefix="/auth")
+app.include_router(me_router, prefix="/me")
 app.include_router(database_router, prefix="/database")
+app.include_router(creation_router, prefix="/creation")
 app.include_router(llm_router, prefix="/llm")
 app.include_router(image_router, prefix="/image")
-app.include_router(me_router, prefix="/me")
 
 if __name__ == "__main__":
-    print(app.openapi())
-
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8080)
