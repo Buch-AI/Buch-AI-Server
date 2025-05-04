@@ -13,6 +13,7 @@ from google.cloud.run_v2.types.condition import Condition
 from PIL import Image
 from pydantic import BaseModel
 
+from app.models.cost_centre import CostCentreManager
 from app.routers.auth_routes import User, get_current_active_user
 from app.tasks.video_generator.main import VideoGenerator
 from config import ENV, GCLOUD_STB_CREATIONS_NAME
@@ -23,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 # Create a router for creation-specific operations
 creation_router = APIRouter()
+
+# Initialize cost centre manager
+cost_centre_manager = CostCentreManager()
 
 
 class ImageDataRequest(BaseModel):
@@ -488,11 +492,17 @@ async def generate_video_status(
 async def generate_video(
     creation_id: str,
     current_user: Annotated[User, Depends(get_current_active_user)],
+    cost_centre_id: Optional[str] = None,
 ) -> TaskStatusResponse:
     """Generate a video for a specific creation.
 
     In production (ENV='p'), this triggers a Cloud Run Job.
     In development (ENV='d'), this runs the video generation locally.
+
+    Args:
+        creation_id: ID of the creation to generate video for
+        current_user: User authentication dependency
+        cost_centre_id: Optional cost centre ID for tracking TTS costs
     """
     try:
         if ENV == "p":
@@ -509,7 +519,7 @@ async def generate_video(
                     overrides={
                         "container_overrides": [
                             {
-                                "args": [creation_id],
+                                "args": [creation_id, cost_centre_id or ""],
                                 "env": [{"name": "ENV", "value": f"{ENV}"}],
                             }
                         ],
@@ -573,8 +583,10 @@ async def generate_video(
                     detail="No valid slides found for this creation",
                 )
 
-            # Generate video using VideoGenerator
-            video_bytes = VideoGenerator.create_video_from_slides(slides=slides)
+            # Generate video using VideoGenerator with cost_centre_id
+            video_bytes = await VideoGenerator.create_video_from_slides(
+                slides=slides, cost_centre_id=cost_centre_id
+            )
 
             # Upload video to Google Cloud Storage
             storage_client = storage.Client()
@@ -658,70 +670,10 @@ async def generate_cost_centre(
 ) -> CostCentreResponse:
     """Generate a new cost centre for a specific creation."""
     try:
-        # Initialize clients
-        bigquery_client = bigquery.Client()
-
-        # First, verify the creation belongs to the user
-        verify_query = """
-        SELECT creation_id
-        FROM `bai-buchai-p.creations.profiles`
-        WHERE creation_id = @creation_id
-        AND user_id = @user_id
-        """
-
-        verify_job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-                bigquery.ScalarQueryParameter(
-                    "user_id", "STRING", current_user.username
-                ),
-            ]
+        cost_centre_id = await cost_centre_manager.create_cost_centre(
+            creation_id, current_user.username
         )
-
-        verify_job = bigquery_client.query(verify_query, verify_job_config)
-        if not list(verify_job.result()):
-            logger.error(
-                f"Creation {creation_id} not found or unauthorized\n{format_exc()}"
-            )
-            raise HTTPException(
-                status_code=404,
-                detail="Creation not found or you don't have permission to create a cost centre for it",
-            )
-
-        # Generate a unique cost centre ID
-        cost_centre_id = str(uuid.uuid4())
-
-        # Insert the cost centre
-        query = """
-        INSERT INTO `bai-buchai-p.creations.cost_centres` (
-            cost_centre_id, creation_id, user_id, created_at, cost
-        )
-        VALUES (
-            @cost_centre_id,
-            @creation_id,
-            @user_id,
-            CURRENT_TIMESTAMP(),
-            0
-        )
-        """
-
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter(
-                    "cost_centre_id", "STRING", cost_centre_id
-                ),
-                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-                bigquery.ScalarQueryParameter(
-                    "user_id", "STRING", current_user.username
-                ),
-            ]
-        )
-
-        query_job = bigquery_client.query(query, job_config=job_config)
-        query_job.result()  # Wait for the query to complete
-
         return CostCentreResponse(data=cost_centre_id)
-
     except HTTPException:
         raise
     except Exception as e:

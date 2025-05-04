@@ -6,11 +6,11 @@ from typing import AsyncGenerator, List, Literal, Optional
 import vertexai
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
-from google.cloud import bigquery
 from huggingface_hub import AsyncInferenceClient, InferenceClient
 from pydantic import BaseModel
 from vertexai.generative_models import Content, GenerationConfig, GenerativeModel, Part
 
+from app.models.cost_centre import CostCentreManager
 from app.models.llm import (
     HuggingFaceConfigManager,
     ModelType,
@@ -26,6 +26,9 @@ LLM_PROVIDER: Literal["huggingface", "vertexai"] = "vertexai"
 # Configure logging
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
+
+# Initialize cost centre manager
+cost_centre_manager = CostCentreManager()
 
 
 class GenerateStoryRequest(BaseModel):
@@ -116,35 +119,6 @@ class LlmRouterService(ABC):
         """Calculate the cost based on token usage."""
         pass
 
-    async def update_cost_center(self, cost_centre_id: str, cost: float) -> None:
-        """Update the cost for a cost centre."""
-        if not cost_centre_id:
-            return
-
-        try:
-            bigquery_client = bigquery.Client()
-            query = """
-            UPDATE `bai-buchai-p.creations.cost_centres`
-            SET cost = cost + @additional_cost
-            WHERE cost_centre_id = @cost_centre_id
-            """
-
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("additional_cost", "NUMERIC", cost),
-                    bigquery.ScalarQueryParameter(
-                        "cost_centre_id", "STRING", cost_centre_id
-                    ),
-                ]
-            )
-
-            # Use query instead of query_async
-            query_job = bigquery_client.query(query, job_config=job_config)
-            query_job.result()  # Wait for the query to complete
-        except Exception as e:
-            logging.error(f"Failed to update cost center: {e}")
-            # Don't raise exception to prevent disrupting the main flow
-
 
 class HuggingFaceRouterService(LlmRouterService):
     """HuggingFace implementation of the LLM router service."""
@@ -203,7 +177,9 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # Update cost centre if provided
             if request.cost_centre_id:
-                await self.update_cost_center(request.cost_centre_id, cost)
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, cost
+                )
 
             return TextResponse(
                 text=response.choices[0].message.content,
@@ -255,7 +231,9 @@ class HuggingFaceRouterService(LlmRouterService):
             # After streaming completes, calculate cost and update
             if request.cost_centre_id:
                 cost = self.calculate_cost(prompt_tokens, completion_tokens)
-                await self.update_cost_center(request.cost_centre_id, cost)
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, cost
+                )
 
         except Exception as e:
             logger.error(
@@ -284,7 +262,9 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # Update cost centre if provided
             if request.cost_centre_id:
-                await self.update_cost_center(request.cost_centre_id, cost)
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, cost
+                )
 
             # Parse the response into parts and sub-parts
             text = response.choices[0].message.content
@@ -340,7 +320,9 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # Update cost centre if provided
             if request.cost_centre_id:
-                await self.update_cost_center(request.cost_centre_id, cost)
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, cost
+                )
 
             return TextResponse(
                 text=response.choices[0].message.content,
@@ -399,7 +381,9 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # Update cost centre if provided
             if request.cost_centre_id:
-                await self.update_cost_center(request.cost_centre_id, total_cost)
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, total_cost
+                )
 
             return ImagePromptsResponse(
                 data=image_prompts,
@@ -476,7 +460,9 @@ class VertexAiRouterService(LlmRouterService):
 
             # Update cost centre if provided
             if request.cost_centre_id:
-                await self.update_cost_center(request.cost_centre_id, cost)
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, cost
+                )
 
             return TextResponse(
                 text=response.text,
@@ -546,7 +532,9 @@ class VertexAiRouterService(LlmRouterService):
                     completion_tokens = 500  # Conservative estimate
 
                 cost = self.calculate_cost(prompt_tokens, completion_tokens)
-                await self.update_cost_center(request.cost_centre_id, cost)
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, cost
+                )
 
         except Exception as e:
             logger.error(
@@ -585,7 +573,9 @@ class VertexAiRouterService(LlmRouterService):
 
             # Update cost centre if provided
             if request.cost_centre_id:
-                await self.update_cost_center(request.cost_centre_id, cost)
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, cost
+                )
 
             # Parse the response into parts and sub-parts
             text = response.text
@@ -651,7 +641,9 @@ class VertexAiRouterService(LlmRouterService):
 
             # Update cost centre if provided
             if request.cost_centre_id:
-                await self.update_cost_center(request.cost_centre_id, cost)
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, cost
+                )
 
             return TextResponse(
                 text=response.text,
@@ -716,7 +708,9 @@ class VertexAiRouterService(LlmRouterService):
 
             # Update cost centre if provided
             if request.cost_centre_id:
-                await self.update_cost_center(request.cost_centre_id, total_cost)
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, total_cost
+                )
 
             return ImagePromptsResponse(
                 data=image_prompts,

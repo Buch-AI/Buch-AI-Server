@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 
 from google.cloud import texttospeech
 from google.cloud.texttospeech_v1.types import (
@@ -9,6 +9,7 @@ from google.cloud.texttospeech_v1.types import (
     VoiceSelectionParams,
 )
 
+from app.models.cost_centre import CostCentreManager
 from app.tasks.video_generator.video_slide import VideoSlide
 
 # Configure logging
@@ -16,6 +17,9 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Initialize cost centre manager
+cost_centre_manager = CostCentreManager()
 
 
 class Dubber(ABC):
@@ -27,7 +31,9 @@ class Dubber(ABC):
     """
 
     @abstractmethod
-    def create_audio_from_slides(self, slides: List[VideoSlide]) -> List[VideoSlide]:
+    async def create_audio_from_slides(
+        self, slides: List[VideoSlide]
+    ) -> List[VideoSlide]:
         """Generate audio content from a list of video slides.
 
         Args:
@@ -55,6 +61,7 @@ class GoogleCloudDubber(Dubber):
         voice_name: str = "en-US-Neural2-J",
         speaking_rate: float = 1.0,
         pitch: float = 0.0,
+        cost_centre_id: Optional[str] = None,
     ):
         """Initialize the Google Cloud Dubber.
 
@@ -63,6 +70,7 @@ class GoogleCloudDubber(Dubber):
             voice_name: Specific voice name from Google Cloud TTS
             speaking_rate: Speaking rate multiplier (0.25 to 4.0)
             pitch: Voice pitch adjustment (-20.0 to 20.0)
+            cost_centre_id: Optional ID for tracking costs of TTS usage
         """
         logger.info(
             f"Initializing GoogleCloudDubber with language_code={language_code}, voice_name={voice_name}"
@@ -72,6 +80,43 @@ class GoogleCloudDubber(Dubber):
         self.voice_name = voice_name
         self.speaking_rate = speaking_rate
         self.pitch = pitch
+        self.cost_centre_id = cost_centre_id
+
+        # Determine voice type and set cost per character
+        if "Neural2" in self.voice_name:
+            # Neural2 voices cost $0.000016 per character
+            self.cost_per_character = 0.000016
+            logger.info("Using Neural2 voice: $0.000016 per character")
+        elif "Wavenet" in self.voice_name:
+            # WaveNet voices cost $0.000016 per character
+            self.cost_per_character = 0.000016
+            logger.info("Using WaveNet voice: $0.000016 per character")
+        elif "Chirp" in self.voice_name:
+            # Chirp HD voices cost $0.00003 per character
+            self.cost_per_character = 0.00003
+            logger.info("Using Chirp HD voice: $0.00003 per character")
+        elif "Studio" in self.voice_name:
+            # Studio voices cost $0.00016 per character
+            self.cost_per_character = 0.00016
+            logger.info("Using Studio voice: $0.00016 per character")
+        else:
+            # Standard voices cost $0.000004 per character
+            self.cost_per_character = 0.000004
+            logger.info("Using Standard voice: $0.000004 per character")
+
+    def calculate_cost(self, text: str) -> float:
+        """Calculate the cost of synthesizing the given text.
+
+        Args:
+            text: The text to synthesize
+
+        Returns:
+            float: The cost in USD
+        """
+        # Count characters including spaces and punctuation
+        character_count = len(text)
+        cost = character_count * self.cost_per_character
+        return cost
 
     def _synthesize_speech(self, text: str) -> bytes:
         """Synthesize speech from text using Google Cloud TTS.
@@ -115,13 +160,22 @@ class GoogleCloudDubber(Dubber):
 
             audio_size = len(response.audio_content)
             logger.info(f"Successfully synthesized audio of size {audio_size} bytes")
+
+            # Log cost information for debugging
+            if self.cost_centre_id:
+                logger.info(f"Calculating cost for {len(text)} characters")
+                cost = self.calculate_cost(text)
+                logger.info(f"Cost for text: ${cost:.6f}")
+
             return response.audio_content
 
         except Exception as e:
             logger.error(f"Error synthesizing speech: {str(e)}", exc_info=True)
             raise
 
-    def create_audio_from_slides(self, slides: List[VideoSlide]) -> List[VideoSlide]:
+    async def create_audio_from_slides(
+        self, slides: List[VideoSlide]
+    ) -> List[VideoSlide]:
         """Generate audio content from a list of video slides.
 
         Args:
@@ -132,6 +186,8 @@ class GoogleCloudDubber(Dubber):
         """
         logger.info(f"Processing {len(slides)} slides for audio generation")
         processed_slides = []
+        total_characters = 0
+        total_cost = 0.0
 
         for idx, slide in enumerate(slides, 1):
             logger.info(
@@ -157,6 +213,10 @@ class GoogleCloudDubber(Dubber):
 
                     caption_dubs.append(audio_content)
 
+                    # Track characters and cost
+                    total_characters += len(caption)
+                    total_cost += self.calculate_cost(caption)
+
                 # Create a new slide with the generated audio
                 processed_slide = VideoSlide(
                     image=slide.image,
@@ -171,4 +231,13 @@ class GoogleCloudDubber(Dubber):
                 raise
 
         logger.info(f"Successfully processed all {len(processed_slides)} slides")
+
+        # Update cost centre with total cost if cost_centre_id is provided
+        if self.cost_centre_id and total_cost > 0:
+            logger.info(f"Total characters processed: {total_characters}")
+            logger.info(f"Total cost for all slides: ${total_cost:.6f}")
+            await cost_centre_manager.update_cost_centre(
+                self.cost_centre_id, total_cost
+            )
+
         return processed_slides

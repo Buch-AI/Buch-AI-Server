@@ -1,9 +1,11 @@
+import asyncio
 import logging
 import os
+import sys
 import tempfile
 import uuid
 from io import BytesIO
-from typing import List
+from typing import List, Optional
 from urllib.parse import urlparse
 
 import numpy
@@ -265,12 +267,15 @@ class VideoGenerator:
         return gradient.astype(numpy.uint8)
 
     @staticmethod
-    def create_video_from_slides(slides: List[VideoSlide]) -> bytes:
+    async def create_video_from_slides(
+        slides: List[VideoSlide], cost_centre_id: Optional[str] = None
+    ) -> bytes:
         """
         Create a video from a list of VideoSlide objects, each containing an image and multiple captions.
 
         Args:
             slides: List of VideoSlide objects, each containing an image and its captions
+            cost_centre_id: Optional cost centre ID for tracking TTS usage costs
 
         Returns:
             bytes: The generated video as bytes
@@ -299,11 +304,12 @@ class VideoGenerator:
             voice_name="en-US-Neural2-J",
             speaking_rate=1.0,
             pitch=0.0,
+            cost_centre_id=cost_centre_id,
         )
 
         # Generate audio for all slides
         logger.info("Generating audio for all slides")
-        _slides = dubber.create_audio_from_slides(slides)
+        _slides = await dubber.create_audio_from_slides(slides)
         logger.info(f"Audio generation complete for {len(_slides)} slides")
 
         slide_clips = []
@@ -549,43 +555,48 @@ class VideoGenerator:
 
 if __name__ == "__main__":
     # This is the entry point when running as a Cloud Run Job
-    import sys
-
-    if len(sys.argv) != 2:
-        logger.error("Usage: python main.py <creation_id>")
+    if len(sys.argv) < 2:
+        logger.error("Usage: python main.py <creation_id> [cost_centre_id]")
         sys.exit(1)
 
     creation_id = sys.argv[1]
+    cost_centre_id = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None
 
-    try:
-        # Load slides from GCS
-        gcs_path = f"gs://{GCLOUD_STB_CREATIONS_NAME}/{creation_id}/assets"
-        slides = VideoGenerator.load_assets_from_directory(gcs_path)
+    async def main():
+        try:
+            # Load slides from GCS
+            gcs_path = f"gs://{GCLOUD_STB_CREATIONS_NAME}/{creation_id}/assets"
+            slides = VideoGenerator.load_assets_from_directory(gcs_path)
 
-        if not slides:
-            raise ValueError(f"No valid slides found for creation {creation_id}")
+            if not slides:
+                raise ValueError(f"No valid slides found for creation {creation_id}")
 
-        # Generate video
-        video_bytes = VideoGenerator.create_video_from_slides(slides=slides)
+            # Generate video with cost_centre_id for tracking TTS costs
+            video_bytes = await VideoGenerator.create_video_from_slides(
+                slides=slides, cost_centre_id=cost_centre_id
+            )
 
-        if ENV == "d":
-            # Save video locally in current directory
-            local_video_path = f"video_{creation_id}.mp4"
-            with open(local_video_path, "wb") as f:
-                f.write(video_bytes)
-            logger.info(f"Video saved locally at: {local_video_path}")
+            if ENV == "d":
+                # Save video locally in current directory
+                local_video_path = f"video_{creation_id}.mp4"
+                with open(local_video_path, "wb") as f:
+                    f.write(video_bytes)
+                logger.info(f"Video saved locally at: {local_video_path}")
 
-        if ENV == "p":
-            # Upload to GCS
-            storage_client = storage.Client()
-            bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
-            video_blob_path = f"{creation_id}/assets/video.mp4"
-            video_blob = bucket.blob(video_blob_path)
-            video_blob.upload_from_string(video_bytes, content_type="video/mp4")
+            if ENV == "p":
+                # Upload to GCS
+                storage_client = storage.Client()
+                bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
+                video_blob_path = f"{creation_id}/assets/video.mp4"
+                video_blob = bucket.blob(video_blob_path)
+                video_blob.upload_from_string(video_bytes, content_type="video/mp4")
 
-    except Exception as e:
-        logger.error(
-            f"Error generating video for creation {creation_id}: {str(e)}",
-            exc_info=True,
-        )
-        raise
+        except Exception as e:
+            logger.error(
+                f"Error generating video for creation {creation_id}: {str(e)}",
+                exc_info=True,
+            )
+            raise
+
+    # Run the async main function
+    asyncio.run(main())

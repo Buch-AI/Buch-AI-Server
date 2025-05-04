@@ -2,12 +2,14 @@ import logging
 from abc import ABC, abstractmethod
 from base64 import b64encode
 from traceback import format_exc
-from typing import Literal
+from typing import Literal, Optional
 from urllib.parse import quote
 
 import requests
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
+
+from app.models.cost_centre import CostCentreManager
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR)
@@ -15,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 # Create a router for image generation
 image_router = APIRouter()
+
+# Initialize cost centre manager
+cost_centre_manager = CostCentreManager()
 
 # Global image provider setting
 IMAGE_PROVIDER: Literal["pollinations_ai"] = "pollinations_ai"
@@ -24,6 +29,7 @@ class ImageGenerationRequest(BaseModel):
     prompt: str
     width: int = 512
     height: int = 512
+    cost_centre_id: Optional[str] = None
 
 
 class ImageGenerationResponse(BaseModel):
@@ -41,11 +47,23 @@ class ImageRouterService(ABC):
         """Generate an image based on the provided prompt."""
         pass
 
+    @abstractmethod
+    def calculate_cost(self) -> float:
+        """Calculate the cost for image generation."""
+        pass
+
 
 class PollinationsAiRouterService(ImageRouterService):
     """Pollinations AI implementation of the image router service."""
 
     API_URL = "https://image.pollinations.ai/prompt/{prompt}?width={width}&height={height}&nologo={nologo}&private={private}&safe={safe}"
+
+    def calculate_cost(self) -> float:
+        """
+        Calculate cost for Pollinations AI image generation.
+        Currently free service, so cost is set to 0.
+        """
+        return 0.0
 
     async def generate_image(
         self, request: ImageGenerationRequest
@@ -83,6 +101,13 @@ class PollinationsAiRouterService(ImageRouterService):
 
             # Convert binary data to base64 string
             base64_data = b64encode(response.content)
+
+            # Calculate cost (currently 0) and update cost centre if provided
+            cost = self.calculate_cost()
+            if request.cost_centre_id:
+                await cost_centre_manager.update_cost_centre(
+                    request.cost_centre_id, cost
+                )
 
             return ImageGenerationResponse(data=base64_data, content_type=content_type)
 
