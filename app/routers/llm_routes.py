@@ -388,7 +388,7 @@ class HuggingFaceRouterService(LlmRouterService):
                 # Retrieve relevant entities for this part using vector search
                 relevant_entities, query_embedding_tokens = (
                     self._retrieve_relevant_entities(
-                        request.model_type, entity_index, entity_map, part, top_k=3
+                        request.model_type, entity_index, entity_map, part, top_k=5
                     )
                 )
                 entity_description = "\n".join(
@@ -911,7 +911,7 @@ class VertexAiRouterService(LlmRouterService):
                 # Retrieve relevant entities for this part using vector search
                 relevant_entities, query_embedding_tokens = (
                     self._retrieve_relevant_entities(
-                        request.model_type, entity_index, entity_map, part, top_k=3
+                        request.model_type, entity_index, entity_map, part, top_k=5
                     )
                 )
                 entity_description = "\n".join(

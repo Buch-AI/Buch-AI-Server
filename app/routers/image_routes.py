@@ -27,8 +27,8 @@ IMAGE_PROVIDER: Literal["pollinations_ai"] = "pollinations_ai"
 
 class ImageGenerationRequest(BaseModel):
     prompt: str
-    width: int = 512
-    height: int = 512
+    width: int = 720
+    height: int = 720
     cost_centre_id: Optional[str] = None
 
 

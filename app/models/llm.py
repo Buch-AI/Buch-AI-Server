@@ -252,17 +252,16 @@ class HuggingFaceConfigManager(ConfigManager):
         system_content = (
             "You are an expert at creating image generation prompts. "
             "Given a story or text passage, create a descriptive prompt that captures the essence of the text for an image generation AI. "
-            "Focus on visual elements, setting, characters, mood, and style. "
-            "Structure the prompt as: Characters, Setting, Action, Style, Mood. "
-            "Be specific, detailed, and concise. Keep the prompt within 3 sentences."
+            "Be specific, detailed, and concise. Keep the prompt within 3 sentences. "
+            "Do not include visual elements that are not present in this section of the story. "
         )
 
         user_content = ""
 
         if entity_description:
-            user_content += f"\n\nVisual elements to use throughout the story:\n{entity_description}"
+            user_content += f"\n\nVisual elements that appear throughout the story and can be selectively referenced in this section:\n{entity_description}"
 
-        user_content += f"\n\nCreate an image generation prompt based on the following excerpt of the story: '{story_part}'."
+        user_content += f"\n\nCreate an image generation prompt based on the following excerpt of the story:\n'{story_part}'."
 
         return [
             {"role": "system", "content": system_content},
@@ -398,18 +397,18 @@ class VertexAiConfigManager(ConfigManager):
     ) -> str:
         """Get the formatted prompt for image generation."""
         system_prompt = (
-            "You are an expert at creating image generation prompts. Given a story or text passage, create a descriptive prompt that captures the essence of the text for an image generation AI. "
-            "Focus on visual elements, setting, characters, mood, and style. "
-            "Structure the prompt as: Characters, Setting, Action, Style, Mood. "
+            "You are an expert at creating image generation prompts. "
+            "Given a story or text passage, create a descriptive prompt that captures the essence of the text for an image generation AI. "
             "Be specific, detailed, and concise. Keep the prompt within 3 sentences. "
+            "Do not include visual elements that are not present in this section of the story. "
         )
 
         user_prompt = ""
 
         if entity_description:
-            user_prompt += f"\n\nVisual elements to use throughout the story:\n{entity_description}"
+            user_prompt += f"\n\nVisual elements that appear throughout the story and can be selectively referenced in this section:\n{entity_description}"
 
-        user_prompt += f"\n\nCreate an image generation prompt based on the following excerpt of the story: '{story_part}'."
+        user_prompt += f"\n\nCreate an image generation prompt based on the following excerpt of the story:\n'{story_part}'."
 
         return f"{system_prompt}\n{user_prompt}"
 

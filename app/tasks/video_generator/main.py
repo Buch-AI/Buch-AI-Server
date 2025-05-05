@@ -282,8 +282,12 @@ class VideoGenerator:
         """
         logger.info(f"Starting video generation from {len(slides)} slides")
 
+        # Video dimensions
+        VIDEO_WIDTH = 720
+        VIDEO_HEIGHT = 1280
+
         # Video generation constants
-        FONT_SIZE = 18
+        FONT_SIZE = 32
         FONT_COLOR = "white"
         FONT_NAME = str(
             os.path.join(ASSETS_P_DIR, "Fredoka-VariableFont_wdth,wght.ttf")
@@ -334,8 +338,31 @@ class VideoGenerator:
             image = Image.open(BytesIO(slide.image))
             logger.info(f"Slide {slide_idx} image size: {image.width}x{image.height}")
 
-            # Create image clip
-            image_clip = ImageClip(numpy.array(image))
+            # Create a blank black canvas with the target dimensions
+            canvas = Image.new("RGB", (VIDEO_WIDTH, VIDEO_HEIGHT), (0, 0, 0))
+
+            # Resize image to be square with the width of the video
+            square_size = VIDEO_WIDTH
+
+            # Resize image to be square while maintaining aspect ratio
+            if image.width > image.height:
+                new_width = square_size
+                new_height = int(square_size * image.height / image.width)
+            else:
+                new_height = square_size
+                new_width = int(square_size * image.width / image.height)
+
+            resized_image = image.resize((new_width, new_height), Image.LANCZOS)
+
+            # Calculate position to paste in center
+            paste_x = (VIDEO_WIDTH - new_width) // 2
+            paste_y = (VIDEO_HEIGHT - new_height) // 2
+
+            # Paste resized image onto black canvas
+            canvas.paste(resized_image, (paste_x, paste_y))
+
+            # Create image clip from the canvas
+            image_clip = ImageClip(numpy.array(canvas))
 
             caption_clips = []
             current_time = 0
@@ -382,7 +409,7 @@ class VideoGenerator:
                         color=FONT_COLOR,
                         method="caption",
                         size=(
-                            image.width - 2 * CAPTION_PADDING,
+                            VIDEO_WIDTH - 2 * CAPTION_PADDING,
                             None,
                         ),  # Add padding on sides
                         font=FONT_NAME,
@@ -391,7 +418,7 @@ class VideoGenerator:
                     # Get text clip size and calculate positions
                     text_height = text_clip.size[1]
                     text_y_pos = (
-                        image.height - text_height - CAPTION_PADDING
+                        VIDEO_HEIGHT - text_height - CAPTION_PADDING
                     )  # Add bottom padding
                     gradient_height = int(
                         text_height * 2
@@ -399,7 +426,7 @@ class VideoGenerator:
 
                     # Create gradient background
                     gradient = VideoGenerator.get_gradient_background(
-                        width=image.width,
+                        width=VIDEO_WIDTH,
                         height=gradient_height,
                         alpha_bottom=1.0,  # Fully opaque at bottom
                         alpha_top=0.0,  # Fully transparent at top
@@ -415,14 +442,14 @@ class VideoGenerator:
                         color="black",
                         method="caption",
                         size=(
-                            image.width - 2 * CAPTION_PADDING,
+                            VIDEO_WIDTH - 2 * CAPTION_PADDING,
                             None,
                         ),  # Add padding on sides
                         font=FONT_NAME,
                     )
 
                     # Position clips
-                    gradient_y_pos = image.height - gradient_height
+                    gradient_y_pos = VIDEO_HEIGHT - gradient_height
                     gradient_clip = gradient_clip.set_position(
                         ("center", gradient_y_pos)
                     )
