@@ -58,7 +58,7 @@ class GoogleCloudDubber(Dubber):
     def __init__(
         self,
         language_code: str = "en-US",
-        voice_name: str = "en-US-Neural2-J",
+        voice_name: str = "en-US-Standard-C",  # https://cloud.google.com/text-to-speech/docs/list-voices-and-types#standard_voices
         speaking_rate: float = 1.0,
         pitch: float = 0.0,
         cost_centre_id: Optional[str] = None,
@@ -83,6 +83,7 @@ class GoogleCloudDubber(Dubber):
         self.cost_centre_id = cost_centre_id
 
         # Determine voice type and set cost per character
+        # https://cloud.google.com/text-to-speech/pricing?hl=en
         if "Neural2" in self.voice_name:
             # Neural2 voices cost $0.000016 per character
             self.cost_per_character = 0.000016
