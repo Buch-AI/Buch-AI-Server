@@ -1,14 +1,18 @@
+import json
 import logging
 from abc import ABC, abstractmethod
 from traceback import format_exc
-from typing import AsyncGenerator, List, Literal, Optional
+from typing import AsyncGenerator, Dict, List, Literal, Optional
 
+import faiss
+import numpy as np
 import vertexai
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from huggingface_hub import AsyncInferenceClient, InferenceClient
 from pydantic import BaseModel
 from vertexai.generative_models import Content, GenerationConfig, GenerativeModel, Part
+from vertexai.language_models import TextEmbeddingModel
 
 from app.models.cost_centre import CostCentreManager
 from app.models.llm import (
@@ -18,7 +22,7 @@ from app.models.llm import (
 )
 from config import HF_API_KEY
 
-# TODO: Depending on which provider is avaiable, switch.
+# TODO: Depending on which provider is available, switch.
 # TODO: Make this an environment variable.
 # Global LLM provider setting
 LLM_PROVIDER: Literal["huggingface", "vertexai"] = "vertexai"
@@ -44,18 +48,19 @@ class SummariseStoryRequest(BaseModel):
 
 
 class GenerateImagePromptsRequest(BaseModel):
-    story_summary: str
+    story: str
     story_parts: List[str]
     model_type: ModelType = ModelType.LITE
     cost_centre_id: Optional[str] = None
 
 
-class TokenUsage(BaseModel):
+class CostUsage(BaseModel):
     """Model for tracking token usage in LLM calls."""
 
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
+    embedding_tokens: int = 0
+    generation_prompt_tokens: int = 0
+    generation_completion_tokens: int = 0
+    total_tokens: int = 0
     cost: float = 0.0
 
 
@@ -63,21 +68,21 @@ class TextResponse(BaseModel):
     """Response model for endpoints that return text."""
 
     text: str
-    usage: TokenUsage
+    usage: CostUsage
 
 
 class SplitStoryResponse(BaseModel):
     """Response model for split_story endpoint."""
 
     data: List[List[str]]
-    usage: TokenUsage
+    usage: CostUsage
 
 
 class ImagePromptsResponse(BaseModel):
     """Response model for generate_image_prompts endpoint."""
 
     data: List[str]
-    usage: TokenUsage
+    usage: CostUsage
 
 
 class LlmRouterService(ABC):
@@ -115,7 +120,14 @@ class LlmRouterService(ABC):
         pass
 
     @abstractmethod
-    def calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
+    def calculate_embedding_cost(self, token_count: int) -> float:
+        """Calculate the cost based on embedding token usage."""
+        pass
+
+    @abstractmethod
+    def calculate_generation_cost(
+        self, prompt_tokens: int, completion_tokens: int
+    ) -> float:
         """Calculate the cost based on token usage."""
         pass
 
@@ -137,7 +149,22 @@ class HuggingFaceRouterService(LlmRouterService):
             base_url="https://api-inference.huggingface.co", token=self.api_key
         )
 
-    def calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
+    def calculate_embedding_cost(self, token_count: int) -> float:
+        """
+        Calculate cost for text embedding models in Hugging Face.
+
+        For sentence-transformers models on Hugging Face Inference API:
+        - Approximately $0.0001 per 1K tokens ($0.0000001 per token)
+
+        These are approximate rates for embedding models on the Inference API.
+        """
+        embedding_cost_per_token = 0.0000001  # $0.0001 per 1K tokens
+
+        return token_count * embedding_cost_per_token
+
+    def calculate_generation_cost(
+        self, prompt_tokens: int, completion_tokens: int
+    ) -> float:
         """
         Calculate cost for Hugging Face models.
 
@@ -158,22 +185,28 @@ class HuggingFaceRouterService(LlmRouterService):
         self, request: GenerateStoryRequest
     ) -> TextResponse:
         try:
-            model_config = HuggingFaceConfigManager.get_model_config(request.model_type)
+            text_generation_model_config = (
+                HuggingFaceConfigManager.get_text_generation_model_config(
+                    request.model_type
+                )
+            )
             messages = HuggingFaceConfigManager.get_prompt_story_generate(
                 request.model_type, request.prompt
             )
 
             response = self.client.chat.completions.create(
                 messages=messages,
-                model=model_config.model_id,
-                max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                top_p=model_config.top_p,
+                model=text_generation_model_config.model_id,
+                max_tokens=text_generation_model_config.max_tokens,
+                temperature=text_generation_model_config.temperature,
+                top_p=text_generation_model_config.top_p,
             )
 
             # Extract usage data for cost calculation
             usage = response.usage
-            cost = self.calculate_cost(usage.prompt_tokens, usage.completion_tokens)
+            cost = self.calculate_generation_cost(
+                usage.prompt_tokens, usage.completion_tokens
+            )
 
             # Update cost centre if provided
             if request.cost_centre_id:
@@ -183,9 +216,10 @@ class HuggingFaceRouterService(LlmRouterService):
 
             return TextResponse(
                 text=response.choices[0].message.content,
-                usage=TokenUsage(
-                    prompt_tokens=usage.prompt_tokens,
-                    completion_tokens=usage.completion_tokens,
+                usage=CostUsage(
+                    embedding_tokens=0,  # No embeddings used in this method
+                    generation_prompt_tokens=usage.prompt_tokens,
+                    generation_completion_tokens=usage.completion_tokens,
                     total_tokens=usage.total_tokens,
                     cost=cost,
                 ),
@@ -202,7 +236,11 @@ class HuggingFaceRouterService(LlmRouterService):
         self, request: GenerateStoryRequest
     ) -> AsyncGenerator[str, None]:
         try:
-            model_config = HuggingFaceConfigManager.get_model_config(request.model_type)
+            text_generation_model_config = (
+                HuggingFaceConfigManager.get_text_generation_model_config(
+                    request.model_type
+                )
+            )
             messages = HuggingFaceConfigManager.get_prompt_story_generate(
                 request.model_type, request.prompt
             )
@@ -213,11 +251,11 @@ class HuggingFaceRouterService(LlmRouterService):
 
             stream = await self.async_client.chat.completions.create(
                 messages=messages,
-                model=model_config.model_id,
+                model=text_generation_model_config.model_id,
                 stream=True,
-                max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                top_p=model_config.top_p,
+                max_tokens=text_generation_model_config.max_tokens,
+                temperature=text_generation_model_config.temperature,
+                top_p=text_generation_model_config.top_p,
             )
 
             async for chunk in stream:
@@ -230,7 +268,7 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # After streaming completes, calculate cost and update
             if request.cost_centre_id:
-                cost = self.calculate_cost(prompt_tokens, completion_tokens)
+                cost = self.calculate_generation_cost(prompt_tokens, completion_tokens)
                 await cost_centre_manager.update_cost_centre(
                     request.cost_centre_id, cost
                 )
@@ -243,22 +281,28 @@ class HuggingFaceRouterService(LlmRouterService):
 
     async def split_story(self, request: GenerateStoryRequest) -> SplitStoryResponse:
         try:
-            model_config = HuggingFaceConfigManager.get_model_config(request.model_type)
+            text_generation_model_config = (
+                HuggingFaceConfigManager.get_text_generation_model_config(
+                    request.model_type
+                )
+            )
             messages = HuggingFaceConfigManager.get_prompt_story_split(
                 request.model_type, request.prompt
             )
 
             response = self.client.chat.completions.create(
                 messages=messages,
-                model=model_config.model_id,
-                max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                top_p=model_config.top_p,
+                model=text_generation_model_config.model_id,
+                max_tokens=text_generation_model_config.max_tokens,
+                temperature=text_generation_model_config.temperature,
+                top_p=text_generation_model_config.top_p,
             )
 
             # Extract usage data for cost calculation
             usage = response.usage
-            cost = self.calculate_cost(usage.prompt_tokens, usage.completion_tokens)
+            cost = self.calculate_generation_cost(
+                usage.prompt_tokens, usage.completion_tokens
+            )
 
             # Update cost centre if provided
             if request.cost_centre_id:
@@ -284,9 +328,10 @@ class HuggingFaceRouterService(LlmRouterService):
 
             return SplitStoryResponse(
                 data=result,
-                usage=TokenUsage(
-                    prompt_tokens=usage.prompt_tokens,
-                    completion_tokens=usage.completion_tokens,
+                usage=CostUsage(
+                    embedding_tokens=0,  # No embeddings used in this method
+                    generation_prompt_tokens=usage.prompt_tokens,
+                    generation_completion_tokens=usage.completion_tokens,
                     total_tokens=usage.total_tokens,
                     cost=cost,
                 ),
@@ -301,22 +346,28 @@ class HuggingFaceRouterService(LlmRouterService):
 
     async def summarise_story(self, request: SummariseStoryRequest) -> TextResponse:
         try:
-            model_config = HuggingFaceConfigManager.get_model_config(request.model_type)
+            text_generation_model_config = (
+                HuggingFaceConfigManager.get_text_generation_model_config(
+                    request.model_type
+                )
+            )
             messages = HuggingFaceConfigManager.get_prompt_story_summarise(
                 request.model_type, request.story
             )
 
             response = self.client.chat.completions.create(
                 messages=messages,
-                model=model_config.model_id,
-                max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                top_p=model_config.top_p,
+                model=text_generation_model_config.model_id,
+                max_tokens=text_generation_model_config.max_tokens,
+                temperature=text_generation_model_config.temperature,
+                top_p=text_generation_model_config.top_p,
             )
 
             # Extract usage data for cost calculation
             usage = response.usage
-            cost = self.calculate_cost(usage.prompt_tokens, usage.completion_tokens)
+            cost = self.calculate_generation_cost(
+                usage.prompt_tokens, usage.completion_tokens
+            )
 
             # Update cost centre if provided
             if request.cost_centre_id:
@@ -326,9 +377,10 @@ class HuggingFaceRouterService(LlmRouterService):
 
             return TextResponse(
                 text=response.choices[0].message.content,
-                usage=TokenUsage(
-                    prompt_tokens=usage.prompt_tokens,
-                    completion_tokens=usage.completion_tokens,
+                usage=CostUsage(
+                    embedding_tokens=0,  # No embeddings used in this method
+                    generation_prompt_tokens=usage.prompt_tokens,
+                    generation_completion_tokens=usage.completion_tokens,
                     total_tokens=usage.total_tokens,
                     cost=cost,
                 ),
@@ -345,31 +397,74 @@ class HuggingFaceRouterService(LlmRouterService):
         self, request: GenerateImagePromptsRequest
     ) -> ImagePromptsResponse:
         try:
-            model_config = HuggingFaceConfigManager.get_model_config(request.model_type)
+            text_generation_model_config = (
+                HuggingFaceConfigManager.get_text_generation_model_config(
+                    request.model_type
+                )
+            )
 
-            # Create a list to store the generated prompts
-            image_prompts = []
+            # Step 1: Extract entities from the story
+            entities = await self._extract_story_entities(
+                request.model_type, request.story
+            )
+
+            # Step 2: Create vector index from entities and track embedding costs
+            entity_index, entity_map, embedding_token_count = self._create_entity_index(
+                entities
+            )
+            embedding_cost = self.calculate_embedding_cost(embedding_token_count)
+
+            # Track total costs
+            total_embedding_tokens = embedding_token_count
             total_prompt_tokens = 0
             total_completion_tokens = 0
-            total_cost = 0.0
+            total_cost = embedding_cost
+
+            # Step 3: Generate enhanced image prompts with entity context
+            image_prompts = []
 
             # For each story part
             for part in request.story_parts:
-                part_messages = HuggingFaceConfigManager.get_prompt_image_generate(
-                    request.model_type, request.story_summary, part
+                # Retrieve relevant entities for this part using vector search
+                relevant_entities, query_embedding_tokens = (
+                    self._retrieve_relevant_entities(
+                        entity_index, entity_map, part, top_k=3
+                    )
+                )
+                entity_description = "\n".join(
+                    [
+                        f"{entity['type'].upper()}: {entity['name']} - {entity['description']}"
+                        for entity in relevant_entities
+                        if entity
+                    ]
+                )
+
+                # Add embedding cost for query
+                query_embedding_cost = self.calculate_embedding_cost(
+                    query_embedding_tokens
+                )
+                total_embedding_tokens += query_embedding_tokens
+                total_cost += query_embedding_cost
+
+                # Use the updated get_prompt_image_generate method with entity_description
+                messages = HuggingFaceConfigManager.get_prompt_image_generate(
+                    request.model_type,
+                    request.story,
+                    part,
+                    entity_description=entity_description,
                 )
 
                 part_response = self.client.chat.completions.create(
-                    messages=part_messages,
-                    model=model_config.model_id,
-                    max_tokens=model_config.max_tokens,
-                    temperature=model_config.temperature,
-                    top_p=model_config.top_p,
+                    messages=messages,
+                    model=text_generation_model_config.model_id,
+                    max_tokens=text_generation_model_config.max_tokens,
+                    temperature=text_generation_model_config.temperature,
+                    top_p=text_generation_model_config.top_p,
                 )
 
                 # Accumulate token usage
                 usage = part_response.usage
-                part_cost = self.calculate_cost(
+                part_cost = self.calculate_generation_cost(
                     usage.prompt_tokens, usage.completion_tokens
                 )
 
@@ -387,10 +482,13 @@ class HuggingFaceRouterService(LlmRouterService):
 
             return ImagePromptsResponse(
                 data=image_prompts,
-                usage=TokenUsage(
-                    prompt_tokens=total_prompt_tokens,
-                    completion_tokens=total_completion_tokens,
-                    total_tokens=total_prompt_tokens + total_completion_tokens,
+                usage=CostUsage(
+                    embedding_tokens=total_embedding_tokens,
+                    generation_prompt_tokens=total_prompt_tokens,
+                    generation_completion_tokens=total_completion_tokens,
+                    total_tokens=total_prompt_tokens
+                    + total_completion_tokens
+                    + total_embedding_tokens,
                     cost=total_cost,
                 ),
             )
@@ -403,6 +501,136 @@ class HuggingFaceRouterService(LlmRouterService):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             )
 
+    async def _extract_story_entities(
+        self, model_type: ModelType, story: str
+    ) -> List[Dict]:
+        """
+        Extract entities (characters, locations) from story text using LLM.
+
+        Args:
+            model_type: The model type to use for entity extraction
+            story: The complete story text
+
+        Returns:
+            List of entity dictionaries containing type, name, and description
+        """
+        text_generation_model_config = (
+            HuggingFaceConfigManager.get_text_generation_model_config(model_type)
+        )
+
+        messages = HuggingFaceConfigManager.get_prompt_story_entities(model_type, story)
+
+        response = self.client.chat.completions.create(
+            messages=messages,
+            model=text_generation_model_config.model_id,
+            max_tokens=text_generation_model_config.max_tokens,
+            temperature=0.2,  # Lower temperature for more deterministic output
+            top_p=0.9,
+        )
+
+        # Parse the JSON response to extract entities
+        try:
+            result = response.choices[0].message.content
+            # Clean up the JSON string if needed
+            cleaned_json = result.strip()
+            if cleaned_json.startswith("```json"):
+                cleaned_json = cleaned_json[7:]
+            if cleaned_json.endswith("```"):
+                cleaned_json = cleaned_json[:-3]
+
+            entities = json.loads(cleaned_json)
+            if not isinstance(entities, list):
+                entities = [entities]
+            return entities
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            logger.error(f"Failed to parse entity JSON response: {result}")
+            return []
+
+    def _create_entity_index(self, entities: List[Dict]) -> tuple:
+        """
+        Create a FAISS index from entity descriptions for vector search.
+
+        Args:
+            entities: List of entity dictionaries containing name, type, and description
+
+        Returns:
+            tuple: (
+                index: FAISS index for vector similarity search,
+                entity_map: Dictionary mapping index positions to entity dictionaries,
+                token_count: Estimated number of tokens used for embeddings
+            )
+        """
+        if not entities:
+            return None, {}, 0
+
+        # Extract descriptions for embedding
+        descriptions = [entity.get("description", "") for entity in entities]
+
+        # Estimate token count (roughly 4 chars per token)
+        token_count = sum(len(desc) // 4 for desc in descriptions)
+
+        # Get embedding model config from the manager
+        embedding_model_config = (
+            HuggingFaceConfigManager.get_text_embedding_model_config(ModelType.LITE)
+        )
+
+        # Create embeddings using the HuggingFace client
+        embedding_response = self.client.feature_extraction(
+            text=descriptions, model=embedding_model_config.model_id
+        )
+
+        # Convert to numpy array
+        embeddings = np.array(embedding_response)
+
+        # Create FAISS index
+        dimension = embeddings.shape[1]
+        index = faiss.IndexFlatL2(dimension)
+        index.add(embeddings)
+
+        # Create mapping from index to entity
+        entity_map = {i: entities[i] for i in range(len(entities))}
+
+        return index, entity_map, token_count
+
+    def _retrieve_relevant_entities(self, index, entity_map, query_text, top_k=3):
+        """
+        Retrieve relevant entities based on query text using vector similarity.
+
+        Args:
+            index: FAISS index for vector similarity search
+            entity_map: Dictionary mapping index positions to entity dictionaries
+            query_text: Text to find relevant entities for
+            top_k: Number of entities to retrieve
+
+        Returns:
+            tuple: (
+                entities: List of entity dictionaries most relevant to the query,
+                token_count: Estimated number of tokens used for query embedding
+            )
+        """
+        if index is None:
+            return [], 0
+
+        # Estimate token count (roughly 4 chars per token)
+        token_count = len(query_text) // 4
+
+        # Get embedding model config from the manager
+        embedding_model_config = (
+            HuggingFaceConfigManager.get_text_embedding_model_config(ModelType.LITE)
+        )
+
+        # Get embedding for query
+        query_emb = self.client.feature_extraction(
+            text=[query_text], model=embedding_model_config.model_id
+        )
+
+        # Search in FAISS index
+        distances, indices = index.search(np.array(query_emb), top_k)
+
+        # Return relevant entities
+        return [entity_map.get(i) for i in indices[0]], token_count
+
 
 class VertexAiRouterService(LlmRouterService):
     """Vertex AI implementation of the LLM router service."""
@@ -410,7 +638,22 @@ class VertexAiRouterService(LlmRouterService):
     def __init__(self):
         vertexai.init(project="bai-buchai-p", location="us-east1")
 
-    def calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
+    def calculate_embedding_cost(self, token_count: int) -> float:
+        """
+        Calculate cost for text embedding models in Vertex AI.
+
+        For Vertex AI text-embedding models:
+        - Approximately $0.0001 per 1K tokens ($0.0000001 per token)
+
+        Rates are based on Google Cloud documentation.
+        """
+        embedding_cost_per_token = 0.0000001  # $0.0001 per 1K tokens
+
+        return token_count * embedding_cost_per_token
+
+    def calculate_generation_cost(
+        self, prompt_tokens: int, completion_tokens: int
+    ) -> float:
         """
         Calculate cost for Vertex AI models (Gemini Pro).
 
@@ -431,16 +674,20 @@ class VertexAiRouterService(LlmRouterService):
         self, request: GenerateStoryRequest
     ) -> TextResponse:
         try:
-            model_config = VertexAiConfigManager.get_model_config(request.model_type)
+            text_generation_model_config = (
+                VertexAiConfigManager.get_text_generation_model_config(
+                    request.model_type
+                )
+            )
             prompt = VertexAiConfigManager.get_prompt_story_generate(
                 request.model_type, request.prompt
             )
 
-            model = GenerativeModel(model_config.model_id)
+            model = GenerativeModel(text_generation_model_config.model_id)
             generation_config = GenerationConfig(
-                max_output_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                top_p=model_config.top_p,
+                max_output_tokens=text_generation_model_config.max_tokens,
+                temperature=text_generation_model_config.temperature,
+                top_p=text_generation_model_config.top_p,
             )
 
             prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
@@ -456,7 +703,7 @@ class VertexAiRouterService(LlmRouterService):
             total_tokens = prompt_tokens + completion_tokens
 
             # Calculate cost based on actual token usage
-            cost = self.calculate_cost(prompt_tokens, completion_tokens)
+            cost = self.calculate_generation_cost(prompt_tokens, completion_tokens)
 
             # Update cost centre if provided
             if request.cost_centre_id:
@@ -466,9 +713,10 @@ class VertexAiRouterService(LlmRouterService):
 
             return TextResponse(
                 text=response.text,
-                usage=TokenUsage(
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
+                usage=CostUsage(
+                    embedding_tokens=0,  # No embeddings used in this method
+                    generation_prompt_tokens=prompt_tokens,
+                    generation_completion_tokens=completion_tokens,
                     total_tokens=total_tokens,
                     cost=cost,
                 ),
@@ -485,16 +733,20 @@ class VertexAiRouterService(LlmRouterService):
         self, request: GenerateStoryRequest
     ) -> AsyncGenerator[str, None]:
         try:
-            model_config = VertexAiConfigManager.get_model_config(request.model_type)
+            text_generation_model_config = (
+                VertexAiConfigManager.get_text_generation_model_config(
+                    request.model_type
+                )
+            )
             prompt = VertexAiConfigManager.get_prompt_story_generate(
                 request.model_type, request.prompt
             )
 
-            model = GenerativeModel(model_config.model_id)
+            model = GenerativeModel(text_generation_model_config.model_id)
             generation_config = GenerationConfig(
-                max_output_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                top_p=model_config.top_p,
+                max_output_tokens=text_generation_model_config.max_tokens,
+                temperature=text_generation_model_config.temperature,
+                top_p=text_generation_model_config.top_p,
             )
 
             prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
@@ -531,7 +783,7 @@ class VertexAiRouterService(LlmRouterService):
                 if completion_tokens == 0:
                     completion_tokens = 500  # Conservative estimate
 
-                cost = self.calculate_cost(prompt_tokens, completion_tokens)
+                cost = self.calculate_generation_cost(prompt_tokens, completion_tokens)
                 await cost_centre_manager.update_cost_centre(
                     request.cost_centre_id, cost
                 )
@@ -544,16 +796,20 @@ class VertexAiRouterService(LlmRouterService):
 
     async def split_story(self, request: GenerateStoryRequest) -> SplitStoryResponse:
         try:
-            model_config = VertexAiConfigManager.get_model_config(request.model_type)
+            text_generation_model_config = (
+                VertexAiConfigManager.get_text_generation_model_config(
+                    request.model_type
+                )
+            )
             prompt = VertexAiConfigManager.get_prompt_story_split(
                 request.model_type, request.prompt
             )
 
-            model = GenerativeModel(model_config.model_id)
+            model = GenerativeModel(text_generation_model_config.model_id)
             generation_config = GenerationConfig(
-                max_output_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                top_p=model_config.top_p,
+                max_output_tokens=text_generation_model_config.max_tokens,
+                temperature=text_generation_model_config.temperature,
+                top_p=text_generation_model_config.top_p,
             )
 
             prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
@@ -569,7 +825,7 @@ class VertexAiRouterService(LlmRouterService):
             total_tokens = prompt_tokens + completion_tokens
 
             # Calculate cost based on actual token usage
-            cost = self.calculate_cost(prompt_tokens, completion_tokens)
+            cost = self.calculate_generation_cost(prompt_tokens, completion_tokens)
 
             # Update cost centre if provided
             if request.cost_centre_id:
@@ -595,9 +851,10 @@ class VertexAiRouterService(LlmRouterService):
 
             return SplitStoryResponse(
                 data=result,
-                usage=TokenUsage(
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
+                usage=CostUsage(
+                    embedding_tokens=0,  # No embeddings used in this method
+                    generation_prompt_tokens=prompt_tokens,
+                    generation_completion_tokens=completion_tokens,
                     total_tokens=total_tokens,
                     cost=cost,
                 ),
@@ -612,16 +869,20 @@ class VertexAiRouterService(LlmRouterService):
 
     async def summarise_story(self, request: SummariseStoryRequest) -> TextResponse:
         try:
-            model_config = VertexAiConfigManager.get_model_config(request.model_type)
+            text_generation_model_config = (
+                VertexAiConfigManager.get_text_generation_model_config(
+                    request.model_type
+                )
+            )
             prompt = VertexAiConfigManager.get_prompt_story_summarise(
                 request.model_type, request.story
             )
 
-            model = GenerativeModel(model_config.model_id)
+            model = GenerativeModel(text_generation_model_config.model_id)
             generation_config = GenerationConfig(
-                max_output_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                top_p=model_config.top_p,
+                max_output_tokens=text_generation_model_config.max_tokens,
+                temperature=text_generation_model_config.temperature,
+                top_p=text_generation_model_config.top_p,
             )
 
             prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
@@ -637,7 +898,7 @@ class VertexAiRouterService(LlmRouterService):
             total_tokens = prompt_tokens + completion_tokens
 
             # Calculate cost based on actual token usage
-            cost = self.calculate_cost(prompt_tokens, completion_tokens)
+            cost = self.calculate_generation_cost(prompt_tokens, completion_tokens)
 
             # Update cost centre if provided
             if request.cost_centre_id:
@@ -647,9 +908,10 @@ class VertexAiRouterService(LlmRouterService):
 
             return TextResponse(
                 text=response.text,
-                usage=TokenUsage(
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
+                usage=CostUsage(
+                    embedding_tokens=0,  # No embeddings used in this method
+                    generation_prompt_tokens=prompt_tokens,
+                    generation_completion_tokens=completion_tokens,
                     total_tokens=total_tokens,
                     cost=cost,
                 ),
@@ -666,30 +928,71 @@ class VertexAiRouterService(LlmRouterService):
         self, request: GenerateImagePromptsRequest
     ) -> ImagePromptsResponse:
         try:
-            model_config = VertexAiConfigManager.get_model_config(request.model_type)
+            text_generation_model_config = (
+                VertexAiConfigManager.get_text_generation_model_config(
+                    request.model_type
+                )
+            )
 
-            # Create a list to store the generated prompts
-            image_prompts = []
+            # Step 1: Extract entities from the story
+            entities = await self._extract_story_entities(
+                request.model_type, request.story
+            )
+
+            # Step 2: Create vector index from entities and track embedding costs
+            entity_index, entity_map, embedding_token_count = self._create_entity_index(
+                entities
+            )
+            embedding_cost = self.calculate_embedding_cost(embedding_token_count)
+
+            # Track total costs
             total_prompt_tokens = 0
             total_completion_tokens = 0
-            total_cost = 0.0
+            total_embedding_tokens = embedding_token_count
+            total_cost = embedding_cost
 
-            model = GenerativeModel(model_config.model_id)
+            model = GenerativeModel(text_generation_model_config.model_id)
             generation_config = GenerationConfig(
-                max_output_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                top_p=model_config.top_p,
+                max_output_tokens=text_generation_model_config.max_tokens,
+                temperature=text_generation_model_config.temperature,
+                top_p=text_generation_model_config.top_p,
             )
 
             # For each story part
+            image_prompts = []
             for part in request.story_parts:
-                part_prompt = VertexAiConfigManager.get_prompt_image_generate(
-                    request.model_type, request.story_summary, part
+                # Retrieve relevant entities for this part using vector search
+                relevant_entities, query_embedding_tokens = (
+                    self._retrieve_relevant_entities(
+                        entity_index, entity_map, part, top_k=3
+                    )
+                )
+                entity_description = "\n".join(
+                    [
+                        f"{entity['type'].upper()}: {entity['name']} - {entity['description']}"
+                        for entity in relevant_entities
+                        if entity
+                    ]
                 )
 
-                part_content = Content(role="user", parts=[Part.from_text(part_prompt)])
+                # Add embedding cost for query
+                query_embedding_cost = self.calculate_embedding_cost(
+                    query_embedding_tokens
+                )
+                total_embedding_tokens += query_embedding_tokens
+                total_cost += query_embedding_cost
+
+                # Use the updated get_prompt_image_generate method with entity_description
+                prompt = VertexAiConfigManager.get_prompt_image_generate(
+                    request.model_type,
+                    request.story,
+                    part,
+                    entity_description=entity_description,
+                )
+
+                prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
                 part_response = model.generate_content(
-                    part_content,
+                    prompt_content,
                     generation_config=generation_config,
                 )
 
@@ -698,7 +1001,9 @@ class VertexAiRouterService(LlmRouterService):
                 completion_tokens = part_response.usage_metadata.candidates_token_count
 
                 # Calculate cost for this part
-                part_cost = self.calculate_cost(prompt_tokens, completion_tokens)
+                part_cost = self.calculate_generation_cost(
+                    prompt_tokens, completion_tokens
+                )
 
                 total_prompt_tokens += prompt_tokens
                 total_completion_tokens += completion_tokens
@@ -714,10 +1019,13 @@ class VertexAiRouterService(LlmRouterService):
 
             return ImagePromptsResponse(
                 data=image_prompts,
-                usage=TokenUsage(
-                    prompt_tokens=total_prompt_tokens,
-                    completion_tokens=total_completion_tokens,
-                    total_tokens=total_prompt_tokens + total_completion_tokens,
+                usage=CostUsage(
+                    embedding_tokens=total_embedding_tokens,
+                    generation_prompt_tokens=total_prompt_tokens,
+                    generation_completion_tokens=total_completion_tokens,
+                    total_tokens=total_prompt_tokens
+                    + total_completion_tokens
+                    + total_embedding_tokens,
                     cost=total_cost,
                 ),
             )
@@ -729,6 +1037,144 @@ class VertexAiRouterService(LlmRouterService):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             )
+
+    async def _extract_story_entities(
+        self, model_type: ModelType, story: str
+    ) -> List[Dict]:
+        """
+        Extract entities (characters, locations) from story text using LLM.
+
+        Args:
+            model_type: The model type to use for entity extraction
+            story: The complete story text
+
+        Returns:
+            List of entity dictionaries containing type, name, and description
+        """
+        text_generation_model_config = (
+            VertexAiConfigManager.get_text_generation_model_config(model_type)
+        )
+
+        prompt = VertexAiConfigManager.get_prompt_story_entities(model_type, story)
+
+        model = GenerativeModel(text_generation_model_config.model_id)
+        generation_config = GenerationConfig(
+            max_output_tokens=text_generation_model_config.max_tokens,
+            temperature=0.2,  # Lower temperature for more deterministic output
+            top_p=0.9,
+        )
+
+        prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
+        response = model.generate_content(
+            prompt_content,
+            generation_config=generation_config,
+        )
+
+        # Parse the JSON response to extract entities
+        try:
+            result = response.text
+            # Clean up the JSON string if needed
+            cleaned_json = result.strip()
+            if cleaned_json.startswith("```json"):
+                cleaned_json = cleaned_json[7:]
+            if cleaned_json.endswith("```"):
+                cleaned_json = cleaned_json[:-3]
+
+            entities = json.loads(cleaned_json)
+            if not isinstance(entities, list):
+                entities = [entities]
+            return entities
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            logger.error(f"Failed to parse entity JSON response: {result}")
+            return []
+
+    def _create_entity_index(self, entities: List[Dict]) -> tuple:
+        """
+        Create a FAISS index from entity descriptions for vector search.
+
+        Args:
+            entities: List of entity dictionaries containing name, type, and description
+
+        Returns:
+            tuple: (
+                index: FAISS index for vector similarity search,
+                entity_map: Dictionary mapping index positions to entity dictionaries,
+                token_count: Estimated number of tokens used for embeddings
+            )
+        """
+        if not entities:
+            return None, {}, 0
+
+        # Extract descriptions for embedding
+        descriptions = [entity.get("description", "") for entity in entities]
+
+        # Estimate token count (roughly 4 chars per token)
+        token_count = sum(len(desc) // 4 for desc in descriptions)
+
+        # Get embedding model config from the manager
+        embedding_model_config = VertexAiConfigManager.get_text_embedding_model_config(
+            ModelType.LITE
+        )
+
+        # Get embeddings using Vertex AI embedding model
+        embedding_model = TextEmbeddingModel.from_pretrained(
+            embedding_model_config.model_id
+        )
+        embeddings_response = embedding_model.get_embeddings(descriptions)
+        embeddings = np.array(
+            [emb.values for emb in embeddings_response], dtype=np.float32
+        )
+
+        # Create FAISS index
+        dimension = embeddings.shape[1]
+        index = faiss.IndexFlatL2(dimension)
+        index.add(embeddings)
+
+        # Create mapping from index to entity
+        entity_map = {i: entities[i] for i in range(len(entities))}
+
+        return index, entity_map, token_count
+
+    def _retrieve_relevant_entities(self, index, entity_map, query_text, top_k=3):
+        """
+        Retrieve relevant entities based on query text using vector similarity.
+
+        Args:
+            index: FAISS index for vector similarity search
+            entity_map: Dictionary mapping index positions to entity dictionaries
+            query_text: Text to find relevant entities for
+            top_k: Number of entities to retrieve
+
+        Returns:
+            tuple: (
+                entities: List of entity dictionaries most relevant to the query,
+                token_count: Estimated number of tokens used for query embedding
+            )
+        """
+        if index is None:
+            return [], 0
+
+        # Estimate token count (roughly 4 chars per token)
+        token_count = len(query_text) // 4
+
+        # Get embedding model config from the manager
+        embedding_model_config = VertexAiConfigManager.get_text_embedding_model_config(
+            ModelType.LITE
+        )
+
+        # Get embedding for query using Vertex AI embedding model
+        embedding_model = TextEmbeddingModel.from_pretrained(
+            embedding_model_config.model_id
+        )
+        query_emb_response = embedding_model.get_embeddings([query_text])
+        query_emb = np.array([query_emb_response[0].values], dtype=np.float32)
+
+        # Search in FAISS index
+        distances, indices = index.search(query_emb, top_k)
+
+        # Return relevant entities
+        return [entity_map.get(i) for i in indices[0]], token_count
 
 
 # Initialize the appropriate service based on provider

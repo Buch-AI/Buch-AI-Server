@@ -29,6 +29,7 @@ dependencies = [
     "numpy>=2.2.4",
     "google-cloud-run>=0.10.17",
     "google-cloud-texttospeech>=2.26.0",
+    "faiss-cpu>=1.11.0",
 ]
 
 [dependency-groups]

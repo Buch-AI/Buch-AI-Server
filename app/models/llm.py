@@ -1,17 +1,8 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
-
-
-class ModelConfig(BaseModel):
-    """Configuration for a language model."""
-
-    model_id: str
-    max_tokens: int = Field(gt=0)
-    temperature: float = Field(ge=0.0, le=1.0)
-    top_p: float = Field(ge=0.0, le=1.0)
 
 
 class ModelType(str, Enum):
@@ -23,60 +14,107 @@ class ModelType(str, Enum):
     MAX = "max"
 
 
+class TextEmbeddingModelConfig(BaseModel):
+    """Configuration for a language model."""
+
+    model_id: str
+
+
+class TextGenerationModelConfig(BaseModel):
+    """Configuration for a language model."""
+
+    model_id: str
+    max_tokens: int = Field(gt=0)
+    temperature: float = Field(ge=0.0, le=1.0)
+    top_p: float = Field(ge=0.0, le=1.0)
+
+
 class ConfigManager(ABC):
     """Abstract base class for LLM configuration managers."""
 
-    model_configs: Dict[ModelType, ModelConfig] = {}
+    text_embedding_model_configs: Dict[ModelType, TextEmbeddingModelConfig] = {}
+    text_generation_model_configs: Dict[ModelType, TextGenerationModelConfig] = {}
 
     @staticmethod
     @abstractmethod
-    def get_model_config(model_type: ModelType) -> ModelConfig:
+    def get_text_embedding_model_config(
+        model_type: ModelType,
+    ) -> TextEmbeddingModelConfig:
         """Get the configuration for a specific model type."""
-        pass
+        raise NotImplementedError()
+
+    @staticmethod
+    @abstractmethod
+    def get_text_generation_model_config(
+        model_type: ModelType,
+    ) -> TextGenerationModelConfig:
+        """Get the configuration for a specific model type."""
+        raise NotImplementedError()
 
     @staticmethod
     @abstractmethod
     def get_prompt_story_generate(model_type: ModelType, user_prompt: str) -> Any:
         """Get the formatted prompt for story generation."""
-        pass
+        raise NotImplementedError()
 
     @staticmethod
     @abstractmethod
     def get_prompt_story_split(model_type: ModelType, user_prompt: str) -> Any:
         """Get the formatted prompt for story splitting."""
-        pass
+        raise NotImplementedError()
 
     @staticmethod
     @abstractmethod
     def get_prompt_story_summarise(model_type: ModelType, story: str) -> Any:
         """Get the formatted prompt for story summarisation."""
-        pass
+        raise NotImplementedError()
+
+    @staticmethod
+    @abstractmethod
+    def get_prompt_story_entities(model_type: ModelType, story: str) -> Any:
+        """Get the formatted prompt for listing out story entities."""
+        raise NotImplementedError()
 
     @staticmethod
     @abstractmethod
     def get_prompt_image_generate(
-        model_type: ModelType, story_summary: str, story_part: str
+        model_type: ModelType,
+        story: str,
+        story_part: str,
+        entity_description: Optional[str] = None,
     ) -> Any:
-        """Get the formatted prompt for image generation."""
-        pass
+        """Get the formatted prompt for image generation.
+
+        Args:
+            model_type: The model type to use.
+            story: The complete story text.
+            story_part: The specific part of the story to generate an image for.
+            entity_description: Optional context about entities (characters, locations) to maintain consistency.
+        """
+        raise NotImplementedError()
 
 
 class HuggingFaceConfigManager(ConfigManager):
-    # Define preset configurations for different model types
-    model_configs: Dict[ModelType, ModelConfig] = {
-        ModelType.LITE: ModelConfig(
+    text_embedding_model_configs: Dict[ModelType, TextEmbeddingModelConfig] = {
+        ModelType.LITE: TextEmbeddingModelConfig(
+            model_id="sentence-transformers/all-MiniLM-L6-v2",
+        )
+    }
+
+    text_generation_model_configs: Dict[ModelType, TextGenerationModelConfig] = {
+        ModelType.LITE: TextGenerationModelConfig(
             model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
             max_tokens=1024,
             temperature=0.6,
             top_p=0.9,
         ),
-        ModelType.STANDARD: ModelConfig(
+        ModelType.STANDARD: TextGenerationModelConfig(
             model_id="mistralai/Mistral-7B-Instruct-v0.2",
             max_tokens=1024,
             temperature=0.6,
             top_p=0.9,
         ),
-        ModelType.PRO: ModelConfig(
+        ModelType.PRO: TextGenerationModelConfig(
             model_id="google/gemma-3-27b-it",
             max_tokens=2048,
             temperature=0.6,
@@ -85,17 +123,30 @@ class HuggingFaceConfigManager(ConfigManager):
     }
 
     @staticmethod
-    def get_model_config(model_type: ModelType) -> ModelConfig:
+    def get_text_embedding_model_config(
+        model_type: ModelType,
+    ) -> TextEmbeddingModelConfig:
         """Get the configuration for a specific model type."""
-        if model_type not in HuggingFaceConfigManager.model_configs:
+        if model_type not in HuggingFaceConfigManager.text_embedding_model_configs:
             raise ValueError(f"Model type {model_type} not found in configurations")
-        return HuggingFaceConfigManager.model_configs[model_type]
+        return HuggingFaceConfigManager.text_embedding_model_configs[model_type]
+
+    @staticmethod
+    def get_text_generation_model_config(
+        model_type: ModelType,
+    ) -> TextGenerationModelConfig:
+        """Get the configuration for a specific model type."""
+        if model_type not in HuggingFaceConfigManager.text_generation_model_configs:
+            raise ValueError(f"Model type {model_type} not found in configurations")
+        return HuggingFaceConfigManager.text_generation_model_configs[model_type]
 
     @staticmethod
     def get_prompt_story_generate(
         model_type: ModelType, user_prompt: str
     ) -> list[dict]:
-        model_config = HuggingFaceConfigManager.get_model_config(model_type)
+        model_config = HuggingFaceConfigManager.get_text_generation_model_config(
+            model_type
+        )
         return [
             {
                 "role": "system",
@@ -133,29 +184,70 @@ class HuggingFaceConfigManager(ConfigManager):
         ]
 
     @staticmethod
-    def get_prompt_image_generate(
-        model_type: ModelType, story_summary: str, story_part: str
-    ) -> list[dict]:
-        """Get the formatted prompt for image generation."""
+    def get_prompt_story_entities(model_type: ModelType, story: str) -> list[dict]:
         return [
             {
                 "role": "system",
-                "content": "You are an expert at creating image generation prompts. Given a story or text passage, create a descriptive prompt that captures the essence of the text for an image generation AI. Focus on visual elements, setting, characters, mood, and style. Be specific, detailed, and concise. Keep the prompt within 3 sentences.",
+                "content": "You are an assistant helping convert story chapters into image prompts.",
             },
             {
                 "role": "user",
                 "content": (
-                    f"The following is a summary of the story: '{story_summary}'."
-                    f"Create an image generation prompt based the following section of the story: '{story_part}'."
+                    "Extract the key visual elements that should appear in a scene illustration for the following story in the following JSON format:\n"
+                    '"""\n'
+                    "{"
+                    '    "type": (One of the following options: "character", "location"),'
+                    '    "name": (The name of the entity),'
+                    '    "description": (The visual description of the entity that will be used in the image prompt),'
+                    "}"
+                    '"""\n'
+                    "\n"
+                    "Refer to the following story:\n"
+                    '"""\n'
+                    f"{story}"
+                    '"""\n'
                 ),
             },
         ]
 
+    @staticmethod
+    def get_prompt_image_generate(
+        model_type: ModelType,
+        story: str,
+        story_part: str,
+        entity_description: Optional[str] = None,
+    ) -> list[dict]:
+        """Get the formatted prompt for image generation."""
+        system_content = (
+            "You are an expert at creating image generation prompts. "
+            "Given a story or text passage, create a descriptive prompt that captures the essence of the text for an image generation AI. "
+            "Focus on visual elements, setting, characters, mood, and style. "
+            "Structure the prompt as: Characters, Setting, Action, Style, Mood. "
+            "Be specific, detailed, and concise. Keep the prompt within 3 sentences."
+        )
+
+        user_content = ""
+
+        if entity_description:
+            user_content += f"\n\nVisual elements to use throughout the story:\n{entity_description}"
+
+        user_content += f"\n\nCreate an image generation prompt based on the following excerpt of the story: '{story_part}'."
+
+        return [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content},
+        ]
+
 
 class VertexAiConfigManager(ConfigManager):
-    # Define preset configurations for different model types
-    model_configs: Dict[ModelType, ModelConfig] = {
-        ModelType.LITE: ModelConfig(
+    text_embedding_model_configs: Dict[ModelType, TextEmbeddingModelConfig] = {
+        ModelType.LITE: TextEmbeddingModelConfig(
+            model_id="text-embedding-005",
+        )
+    }
+
+    text_generation_model_configs: Dict[ModelType, TextGenerationModelConfig] = {
+        ModelType.LITE: TextGenerationModelConfig(
             model_id="gemini-1.5-flash",
             max_tokens=1024,
             temperature=0.6,
@@ -167,16 +259,29 @@ class VertexAiConfigManager(ConfigManager):
     }
 
     @staticmethod
-    def get_model_config(model_type: ModelType) -> ModelConfig:
+    def get_text_embedding_model_config(
+        model_type: ModelType,
+    ) -> TextEmbeddingModelConfig:
         """Get the configuration for a specific model type."""
-        if model_type not in VertexAiConfigManager.model_configs:
+        if model_type not in VertexAiConfigManager.text_embedding_model_configs:
             raise ValueError(f"Model type {model_type} not found in configurations")
-        return VertexAiConfigManager.model_configs[model_type]
+        return VertexAiConfigManager.text_embedding_model_configs[model_type]
+
+    @staticmethod
+    def get_text_generation_model_config(
+        model_type: ModelType,
+    ) -> TextGenerationModelConfig:
+        """Get the configuration for a specific model type."""
+        if model_type not in VertexAiConfigManager.text_generation_model_configs:
+            raise ValueError(f"Model type {model_type} not found in configurations")
+        return VertexAiConfigManager.text_generation_model_configs[model_type]
 
     @staticmethod
     def get_prompt_story_generate(model_type: ModelType, user_prompt: str) -> str:
         """Get the formatted prompt for story generation."""
-        model_config = VertexAiConfigManager.get_model_config(model_type)
+        model_config = VertexAiConfigManager.get_text_generation_model_config(
+            model_type
+        )
         return (
             f"You are a creative story writer. Your story should be at most {model_config.max_tokens} tokens long."
             f"Write a story based on this prompt: {user_prompt}"
@@ -199,14 +304,44 @@ class VertexAiConfigManager(ConfigManager):
         )
 
     @staticmethod
+    def get_prompt_story_entities(model_type: ModelType, story: str) -> str:
+        return (
+            "You are an assistant helping convert story chapters into image prompts.\n"
+            "Extract the key visual elements that should appear in a scene illustration for the following story in the following JSON format:\n"
+            '"""\n'
+            "{"
+            '    "type": (One of the following options: "character", "location"),'
+            '    "name": (The name of the entity),'
+            '    "description": (The visual description of the entity that will be used in the image prompt),'
+            "}"
+            '"""\n'
+            "\n"
+            "Refer to the following story:\n"
+            '"""\n'
+            f"{story}"
+            '"""\n'
+        )
+
+    @staticmethod
     def get_prompt_image_generate(
-        model_type: ModelType, story_summary: str, story_part: str
+        model_type: ModelType,
+        story: str,
+        story_part: str,
+        entity_description: Optional[str] = None,
     ) -> str:
         """Get the formatted prompt for image generation."""
-        return (
+        system_prompt = (
             "You are an expert at creating image generation prompts. Given a story or text passage, create a descriptive prompt that captures the essence of the text for an image generation AI. "
-            "Focus on visual elements, setting, characters, mood, and style. Be specific, detailed, and concise. "
-            "Keep the prompt within 3 sentences. "
-            f"The following is a summary of the story: '{story_summary}'."
-            f"Create an image generation prompt based on the following section of the story: '{story_part}'."
+            "Focus on visual elements, setting, characters, mood, and style. "
+            "Structure the prompt as: Characters, Setting, Action, Style, Mood. "
+            "Be specific, detailed, and concise. Keep the prompt within 3 sentences. "
         )
+
+        user_prompt = ""
+
+        if entity_description:
+            user_prompt += f"\n\nVisual elements to use throughout the story:\n{entity_description}"
+
+        user_prompt += f"\n\nCreate an image generation prompt based on the following excerpt of the story: '{story_part}'."
+
+        return f"{system_prompt}\n{user_prompt}"
