@@ -15,6 +15,13 @@ resource "google_cloud_run_service" "server" {
       containers {
         image = var.server_image_tag
 
+        resources {
+          limits = {
+            memory = "2Gi"
+            cpu    = "1000m"
+          }
+        }
+
         env {
           name  = "AUTH_JWT_KEY"
           value = var.auth_jwt_key
@@ -49,6 +56,13 @@ resource "google_cloud_run_v2_job" "video_generator" {
     template {
       containers {
         image = var.vidgen_image_tag
+
+        resources {
+          limits = {
+            memory = "2Gi"
+            cpu    = "1000m"
+          }
+        }
       }
     }
   }
