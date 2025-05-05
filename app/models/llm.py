@@ -93,6 +93,37 @@ class ConfigManager(ABC):
         """
         raise NotImplementedError()
 
+    @staticmethod
+    @abstractmethod
+    def calculate_embedding_cost(model_type: ModelType, token_count: int) -> float:
+        """Calculate the cost based on embedding token usage.
+
+        Args:
+            model_type: The model type used for the embedding.
+            token_count: Number of tokens processed.
+
+        Returns:
+            Cost in USD.
+        """
+        raise NotImplementedError()
+
+    @staticmethod
+    @abstractmethod
+    def calculate_generation_cost(
+        model_type: ModelType, prompt_tokens: int, completion_tokens: int
+    ) -> float:
+        """Calculate the cost based on token usage.
+
+        Args:
+            model_type: The model type used for generation.
+            prompt_tokens: Number of tokens in the prompt.
+            completion_tokens: Number of tokens in the completion.
+
+        Returns:
+            Cost in USD.
+        """
+        raise NotImplementedError()
+
 
 class HuggingFaceConfigManager(ConfigManager):
     text_embedding_model_configs: Dict[ModelType, TextEmbeddingModelConfig] = {
@@ -238,6 +269,42 @@ class HuggingFaceConfigManager(ConfigManager):
             {"role": "user", "content": user_content},
         ]
 
+    @staticmethod
+    def calculate_embedding_cost(model_type: ModelType, token_count: int) -> float:
+        """
+        Calculate cost for text embedding models in Hugging Face.
+
+        For sentence-transformers models on Hugging Face Inference API:
+        - Approximately $0.0001 per 1K tokens ($0.0000001 per token)
+
+        These are approximate rates for embedding models on the Inference API.
+        """
+        # TODO: Add pricing for Hugging Face models.
+        embedding_cost_per_token = 0.0000001  # $0.0001 per 1K tokens
+
+        return token_count * embedding_cost_per_token
+
+    @staticmethod
+    def calculate_generation_cost(
+        model_type: ModelType, prompt_tokens: int, completion_tokens: int
+    ) -> float:
+        """
+        Calculate cost for Hugging Face models.
+
+        For Llama 2 models on Hugging Face Inference API:
+        - Input: $0.0002 per 1K tokens ($0.0000002 per token)
+        - Output: $0.0002 per 1K tokens ($0.0000002 per token)
+
+        These are approximate rates for Llama 2 models on the Inference API.
+        """
+        # TODO: Add pricing for Hugging Face models.
+        input_cost_per_token = 0.0000002  # $0.0002 per 1K tokens
+        output_cost_per_token = 0.0000002  # $0.0002 per 1K tokens
+
+        return (prompt_tokens * input_cost_per_token) + (
+            completion_tokens * output_cost_per_token
+        )
+
 
 class VertexAiConfigManager(ConfigManager):
     text_embedding_model_configs: Dict[ModelType, TextEmbeddingModelConfig] = {
@@ -345,3 +412,45 @@ class VertexAiConfigManager(ConfigManager):
         user_prompt += f"\n\nCreate an image generation prompt based on the following excerpt of the story: '{story_part}'."
 
         return f"{system_prompt}\n{user_prompt}"
+
+    @staticmethod
+    def calculate_embedding_cost(model_type: ModelType, token_count: int) -> float:
+        """
+        Calculate cost for text embedding models in Vertex AI.
+        """
+        if model_type == ModelType.LITE:
+            # https://ai.google.dev/gemini-api/docs/pricing#text-embedding-004
+            embedding_cost_per_token = 0.0
+        if model_type == ModelType.STANDARD:
+            embedding_cost_per_token = 0.0
+        if model_type == ModelType.PRO:
+            embedding_cost_per_token = 0.0
+        if model_type == ModelType.MAX:
+            embedding_cost_per_token = 0.0
+
+        return token_count * embedding_cost_per_token
+
+    @staticmethod
+    def calculate_generation_cost(
+        model_type: ModelType, prompt_tokens: int, completion_tokens: int
+    ) -> float:
+        """
+        Calculate cost for Vertex AI models.
+        """
+        if model_type == ModelType.LITE:
+            # https://cloud.google.com/vertex-ai/generative-ai/pricing#gemini-models
+            input_cost_per_token = 0.00001875e-3
+            output_cost_per_token = 0.00007500e-3
+        if model_type == ModelType.STANDARD:
+            input_cost_per_token = 0.15e-6
+            output_cost_per_token = 0.60e-6
+        if model_type == ModelType.PRO:
+            input_cost_per_token = 0.15e-6
+            output_cost_per_token = 0.60e-6
+        if model_type == ModelType.MAX:
+            input_cost_per_token = 0.15e-6
+            output_cost_per_token = 0.60e-6
+
+        return (prompt_tokens * input_cost_per_token) + (
+            completion_tokens * output_cost_per_token
+        )

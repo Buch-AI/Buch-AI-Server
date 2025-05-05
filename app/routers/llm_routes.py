@@ -119,18 +119,6 @@ class LlmRouterService(ABC):
         """Generate image prompts for each section of the story."""
         pass
 
-    @abstractmethod
-    def calculate_embedding_cost(self, token_count: int) -> float:
-        """Calculate the cost based on embedding token usage."""
-        pass
-
-    @abstractmethod
-    def calculate_generation_cost(
-        self, prompt_tokens: int, completion_tokens: int
-    ) -> float:
-        """Calculate the cost based on token usage."""
-        pass
-
 
 class HuggingFaceRouterService(LlmRouterService):
     """HuggingFace implementation of the LLM router service."""
@@ -147,38 +135,6 @@ class HuggingFaceRouterService(LlmRouterService):
         )
         self.async_client = AsyncInferenceClient(
             base_url="https://api-inference.huggingface.co", token=self.api_key
-        )
-
-    def calculate_embedding_cost(self, token_count: int) -> float:
-        """
-        Calculate cost for text embedding models in Hugging Face.
-
-        For sentence-transformers models on Hugging Face Inference API:
-        - Approximately $0.0001 per 1K tokens ($0.0000001 per token)
-
-        These are approximate rates for embedding models on the Inference API.
-        """
-        embedding_cost_per_token = 0.0000001  # $0.0001 per 1K tokens
-
-        return token_count * embedding_cost_per_token
-
-    def calculate_generation_cost(
-        self, prompt_tokens: int, completion_tokens: int
-    ) -> float:
-        """
-        Calculate cost for Hugging Face models.
-
-        For Llama 2 models on Hugging Face Inference API:
-        - Input: $0.0002 per 1K tokens ($0.0000002 per token)
-        - Output: $0.0002 per 1K tokens ($0.0000002 per token)
-
-        These are approximate rates for Llama 2 models on the Inference API.
-        """
-        input_cost_per_token = 0.0000002  # $0.0002 per 1K tokens
-        output_cost_per_token = 0.0000002  # $0.0002 per 1K tokens
-
-        return (prompt_tokens * input_cost_per_token) + (
-            completion_tokens * output_cost_per_token
         )
 
     async def generate_story_string(
@@ -204,8 +160,8 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # Extract usage data for cost calculation
             usage = response.usage
-            cost = self.calculate_generation_cost(
-                usage.prompt_tokens, usage.completion_tokens
+            cost = HuggingFaceConfigManager.calculate_generation_cost(
+                request.model_type, usage.prompt_tokens, usage.completion_tokens
             )
 
             # Update cost centre if provided
@@ -268,7 +224,9 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # After streaming completes, calculate cost and update
             if request.cost_centre_id:
-                cost = self.calculate_generation_cost(prompt_tokens, completion_tokens)
+                cost = HuggingFaceConfigManager.calculate_generation_cost(
+                    request.model_type, prompt_tokens, completion_tokens
+                )
                 await cost_centre_manager.update_cost_centre(
                     request.cost_centre_id, cost
                 )
@@ -300,8 +258,8 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # Extract usage data for cost calculation
             usage = response.usage
-            cost = self.calculate_generation_cost(
-                usage.prompt_tokens, usage.completion_tokens
+            cost = HuggingFaceConfigManager.calculate_generation_cost(
+                request.model_type, usage.prompt_tokens, usage.completion_tokens
             )
 
             # Update cost centre if provided
@@ -365,8 +323,8 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # Extract usage data for cost calculation
             usage = response.usage
-            cost = self.calculate_generation_cost(
-                usage.prompt_tokens, usage.completion_tokens
+            cost = HuggingFaceConfigManager.calculate_generation_cost(
+                request.model_type, usage.prompt_tokens, usage.completion_tokens
             )
 
             # Update cost centre if provided
@@ -410,9 +368,11 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # Step 2: Create vector index from entities and track embedding costs
             entity_index, entity_map, embedding_token_count = self._create_entity_index(
-                entities
+                request.model_type, entities
             )
-            embedding_cost = self.calculate_embedding_cost(embedding_token_count)
+            embedding_cost = HuggingFaceConfigManager.calculate_embedding_cost(
+                request.model_type, embedding_token_count
+            )
 
             # Track total costs
             total_embedding_tokens = embedding_token_count
@@ -428,7 +388,7 @@ class HuggingFaceRouterService(LlmRouterService):
                 # Retrieve relevant entities for this part using vector search
                 relevant_entities, query_embedding_tokens = (
                     self._retrieve_relevant_entities(
-                        entity_index, entity_map, part, top_k=3
+                        request.model_type, entity_index, entity_map, part, top_k=3
                     )
                 )
                 entity_description = "\n".join(
@@ -440,8 +400,10 @@ class HuggingFaceRouterService(LlmRouterService):
                 )
 
                 # Add embedding cost for query
-                query_embedding_cost = self.calculate_embedding_cost(
-                    query_embedding_tokens
+                query_embedding_cost = (
+                    HuggingFaceConfigManager.calculate_embedding_cost(
+                        request.model_type, query_embedding_tokens
+                    )
                 )
                 total_embedding_tokens += query_embedding_tokens
                 total_cost += query_embedding_cost
@@ -464,8 +426,8 @@ class HuggingFaceRouterService(LlmRouterService):
 
                 # Accumulate token usage
                 usage = part_response.usage
-                part_cost = self.calculate_generation_cost(
-                    usage.prompt_tokens, usage.completion_tokens
+                part_cost = HuggingFaceConfigManager.calculate_generation_cost(
+                    request.model_type, usage.prompt_tokens, usage.completion_tokens
                 )
 
                 total_prompt_tokens += usage.prompt_tokens
@@ -547,11 +509,14 @@ class HuggingFaceRouterService(LlmRouterService):
             logger.error(f"Failed to parse entity JSON response: {result}")
             return []
 
-    def _create_entity_index(self, entities: List[Dict]) -> tuple:
+    def _create_entity_index(
+        self, model_type: ModelType, entities: List[Dict]
+    ) -> tuple:
         """
         Create a FAISS index from entity descriptions for vector search.
 
         Args:
+            model_type: The model type to use for embedding
             entities: List of entity dictionaries containing name, type, and description
 
         Returns:
@@ -572,7 +537,7 @@ class HuggingFaceRouterService(LlmRouterService):
 
         # Get embedding model config from the manager
         embedding_model_config = (
-            HuggingFaceConfigManager.get_text_embedding_model_config(ModelType.LITE)
+            HuggingFaceConfigManager.get_text_embedding_model_config(model_type)
         )
 
         # Create embeddings using the HuggingFace client
@@ -593,11 +558,14 @@ class HuggingFaceRouterService(LlmRouterService):
 
         return index, entity_map, token_count
 
-    def _retrieve_relevant_entities(self, index, entity_map, query_text, top_k=3):
+    def _retrieve_relevant_entities(
+        self, model_type: ModelType, index, entity_map, query_text, top_k
+    ):
         """
         Retrieve relevant entities based on query text using vector similarity.
 
         Args:
+            model_type: The model type to use for embedding
             index: FAISS index for vector similarity search
             entity_map: Dictionary mapping index positions to entity dictionaries
             query_text: Text to find relevant entities for
@@ -617,7 +585,7 @@ class HuggingFaceRouterService(LlmRouterService):
 
         # Get embedding model config from the manager
         embedding_model_config = (
-            HuggingFaceConfigManager.get_text_embedding_model_config(ModelType.LITE)
+            HuggingFaceConfigManager.get_text_embedding_model_config(model_type)
         )
 
         # Get embedding for query
@@ -637,38 +605,6 @@ class VertexAiRouterService(LlmRouterService):
 
     def __init__(self):
         vertexai.init(project="bai-buchai-p", location="us-east1")
-
-    def calculate_embedding_cost(self, token_count: int) -> float:
-        """
-        Calculate cost for text embedding models in Vertex AI.
-
-        For Vertex AI text-embedding models:
-        - Approximately $0.0001 per 1K tokens ($0.0000001 per token)
-
-        Rates are based on Google Cloud documentation.
-        """
-        embedding_cost_per_token = 0.0000001  # $0.0001 per 1K tokens
-
-        return token_count * embedding_cost_per_token
-
-    def calculate_generation_cost(
-        self, prompt_tokens: int, completion_tokens: int
-    ) -> float:
-        """
-        Calculate cost for Vertex AI models (Gemini Pro).
-
-        For Gemini Pro pricing:
-        - Input: $0.00025 per 1K tokens ($0.00000025 per token)
-        - Output: $0.0005 per 1K tokens ($0.0000005 per token)
-
-        Rates are based on Google Cloud documentation.
-        """
-        input_cost_per_token = 0.00000025  # $0.00025 per 1K tokens
-        output_cost_per_token = 0.0000005  # $0.0005 per 1K tokens
-
-        return (prompt_tokens * input_cost_per_token) + (
-            completion_tokens * output_cost_per_token
-        )
 
     async def generate_story_string(
         self, request: GenerateStoryRequest
@@ -703,7 +639,9 @@ class VertexAiRouterService(LlmRouterService):
             total_tokens = prompt_tokens + completion_tokens
 
             # Calculate cost based on actual token usage
-            cost = self.calculate_generation_cost(prompt_tokens, completion_tokens)
+            cost = VertexAiConfigManager.calculate_generation_cost(
+                request.model_type, prompt_tokens, completion_tokens
+            )
 
             # Update cost centre if provided
             if request.cost_centre_id:
@@ -783,7 +721,9 @@ class VertexAiRouterService(LlmRouterService):
                 if completion_tokens == 0:
                     completion_tokens = 500  # Conservative estimate
 
-                cost = self.calculate_generation_cost(prompt_tokens, completion_tokens)
+                cost = VertexAiConfigManager.calculate_generation_cost(
+                    request.model_type, prompt_tokens, completion_tokens
+                )
                 await cost_centre_manager.update_cost_centre(
                     request.cost_centre_id, cost
                 )
@@ -825,7 +765,9 @@ class VertexAiRouterService(LlmRouterService):
             total_tokens = prompt_tokens + completion_tokens
 
             # Calculate cost based on actual token usage
-            cost = self.calculate_generation_cost(prompt_tokens, completion_tokens)
+            cost = VertexAiConfigManager.calculate_generation_cost(
+                request.model_type, prompt_tokens, completion_tokens
+            )
 
             # Update cost centre if provided
             if request.cost_centre_id:
@@ -898,7 +840,9 @@ class VertexAiRouterService(LlmRouterService):
             total_tokens = prompt_tokens + completion_tokens
 
             # Calculate cost based on actual token usage
-            cost = self.calculate_generation_cost(prompt_tokens, completion_tokens)
+            cost = VertexAiConfigManager.calculate_generation_cost(
+                request.model_type, prompt_tokens, completion_tokens
+            )
 
             # Update cost centre if provided
             if request.cost_centre_id:
@@ -941,14 +885,16 @@ class VertexAiRouterService(LlmRouterService):
 
             # Step 2: Create vector index from entities and track embedding costs
             entity_index, entity_map, embedding_token_count = self._create_entity_index(
-                entities
+                request.model_type, entities
             )
-            embedding_cost = self.calculate_embedding_cost(embedding_token_count)
+            embedding_cost = VertexAiConfigManager.calculate_embedding_cost(
+                request.model_type, embedding_token_count
+            )
 
             # Track total costs
+            total_embedding_tokens = embedding_token_count
             total_prompt_tokens = 0
             total_completion_tokens = 0
-            total_embedding_tokens = embedding_token_count
             total_cost = embedding_cost
 
             model = GenerativeModel(text_generation_model_config.model_id)
@@ -958,13 +904,14 @@ class VertexAiRouterService(LlmRouterService):
                 top_p=text_generation_model_config.top_p,
             )
 
-            # For each story part
             image_prompts = []
+
+            # For each story part
             for part in request.story_parts:
                 # Retrieve relevant entities for this part using vector search
                 relevant_entities, query_embedding_tokens = (
                     self._retrieve_relevant_entities(
-                        entity_index, entity_map, part, top_k=3
+                        request.model_type, entity_index, entity_map, part, top_k=3
                     )
                 )
                 entity_description = "\n".join(
@@ -976,8 +923,8 @@ class VertexAiRouterService(LlmRouterService):
                 )
 
                 # Add embedding cost for query
-                query_embedding_cost = self.calculate_embedding_cost(
-                    query_embedding_tokens
+                query_embedding_cost = VertexAiConfigManager.calculate_embedding_cost(
+                    request.model_type, query_embedding_tokens
                 )
                 total_embedding_tokens += query_embedding_tokens
                 total_cost += query_embedding_cost
@@ -1001,8 +948,8 @@ class VertexAiRouterService(LlmRouterService):
                 completion_tokens = part_response.usage_metadata.candidates_token_count
 
                 # Calculate cost for this part
-                part_cost = self.calculate_generation_cost(
-                    prompt_tokens, completion_tokens
+                part_cost = VertexAiConfigManager.calculate_generation_cost(
+                    request.model_type, prompt_tokens, completion_tokens
                 )
 
                 total_prompt_tokens += prompt_tokens
@@ -1089,11 +1036,14 @@ class VertexAiRouterService(LlmRouterService):
             logger.error(f"Failed to parse entity JSON response: {result}")
             return []
 
-    def _create_entity_index(self, entities: List[Dict]) -> tuple:
+    def _create_entity_index(
+        self, model_type: ModelType, entities: List[Dict]
+    ) -> tuple:
         """
         Create a FAISS index from entity descriptions for vector search.
 
         Args:
+            model_type: The model type to use for embedding
             entities: List of entity dictionaries containing name, type, and description
 
         Returns:
@@ -1114,7 +1064,7 @@ class VertexAiRouterService(LlmRouterService):
 
         # Get embedding model config from the manager
         embedding_model_config = VertexAiConfigManager.get_text_embedding_model_config(
-            ModelType.LITE
+            model_type
         )
 
         # Get embeddings using Vertex AI embedding model
@@ -1136,11 +1086,14 @@ class VertexAiRouterService(LlmRouterService):
 
         return index, entity_map, token_count
 
-    def _retrieve_relevant_entities(self, index, entity_map, query_text, top_k=3):
+    def _retrieve_relevant_entities(
+        self, model_type: ModelType, index, entity_map, query_text, top_k
+    ):
         """
         Retrieve relevant entities based on query text using vector similarity.
 
         Args:
+            model_type: The model type to use for embedding
             index: FAISS index for vector similarity search
             entity_map: Dictionary mapping index positions to entity dictionaries
             query_text: Text to find relevant entities for
@@ -1160,7 +1113,7 @@ class VertexAiRouterService(LlmRouterService):
 
         # Get embedding model config from the manager
         embedding_model_config = VertexAiConfigManager.get_text_embedding_model_config(
-            ModelType.LITE
+            model_type
         )
 
         # Get embedding for query using Vertex AI embedding model
