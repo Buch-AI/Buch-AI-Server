@@ -314,7 +314,13 @@ class VertexAiConfigManager(ConfigManager):
 
     text_generation_model_configs: Dict[ModelType, TextGenerationModelConfig] = {
         ModelType.LITE: TextGenerationModelConfig(
-            model_id="gemini-1.5-flash",
+            model_id="gemini-2.0-flash-lite",
+            max_tokens=1024,
+            temperature=0.6,
+            top_p=0.9,
+        ),
+        ModelType.STANDARD: TextGenerationModelConfig(
+            model_id="gemini-2.0-flash",
             max_tokens=1024,
             temperature=0.6,
             top_p=0.9,
@@ -438,17 +444,17 @@ class VertexAiConfigManager(ConfigManager):
         """
         if model_type == ModelType.LITE:
             # https://cloud.google.com/vertex-ai/generative-ai/pricing#gemini-models
-            input_cost_per_token = 0.00001875e-3
-            output_cost_per_token = 0.00007500e-3
+            input_cost_per_token = 0.075e-6
+            output_cost_per_token = 0.300e-6
         if model_type == ModelType.STANDARD:
-            input_cost_per_token = 0.15e-6
-            output_cost_per_token = 0.60e-6
+            input_cost_per_token = 0.150e-6
+            output_cost_per_token = 0.600e-6
         if model_type == ModelType.PRO:
-            input_cost_per_token = 0.15e-6
-            output_cost_per_token = 0.60e-6
+            input_cost_per_token = 0.150e-6
+            output_cost_per_token = 0.600e-6
         if model_type == ModelType.MAX:
-            input_cost_per_token = 0.15e-6
-            output_cost_per_token = 0.60e-6
+            input_cost_per_token = 0.150e-6
+            output_cost_per_token = 0.600e-6
 
         return (prompt_tokens * input_cost_per_token) + (
             completion_tokens * output_cost_per_token
