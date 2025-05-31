@@ -29,9 +29,9 @@ uv run pre-commit install
 5. Run the API in development mode.
 ```bash
 # Either, ...
-uv run app/main.py
+uv run app/server/main.py
 # Or, ...
-uv run fastapi dev app/main.py --port 8080
+uv run fastapi dev app/server/main.py --port 8080
 ```
 
 ## Deployment

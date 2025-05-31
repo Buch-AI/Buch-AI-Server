@@ -14,7 +14,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from app.models.cost_centre import CostCentreManager
-from app.routers.auth_routes import User, get_current_active_user
+from app.server.routers.auth_routes import User, get_current_active_user
 from app.tasks.video_generator.main import VideoGenerator
 from config import ENV, GCLOUD_STB_CREATIONS_NAME
 

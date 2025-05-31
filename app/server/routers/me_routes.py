@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import bigquery
 from pydantic import BaseModel
 
-from app.routers.auth_routes import User, get_current_active_user
-from app.routers.creation_routes import CreationProfile
+from app.server.routers.auth_routes import User, get_current_active_user
+from app.server.routers.creation_routes import CreationProfile
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR)
