@@ -4,6 +4,14 @@
 
 [![My Skills](https://skillicons.dev/icons?i=docker,fastapi,gcp,githubactions,py,terraform)](https://skillicons.dev)
 
+## TL;DR — What's so cool about this repo anyways?
+
+- **MCP / Agentic AI**: An MCP server that includes all the text and image generation tools used as part of the story generation workflow of Buch AI
+- **REST APIs**: A REST API backend server that includes text, image and video generation endpoints, authentication endpoints and database connectivity, which compliments a [separate React Native frontend](https://github.com/Buch-AI/Buch-AI-App)
+- **DevOps**: A one-click push-to-main CI/CD pipeline trigger that builds and deploys Docker images and Cloud Run Jobs as part of an efficient DevOps setup using GitHub Actions and Terraform
+- **Infrastructure design**: Use of Google Cloud Run Jobs that execute long-running tasks in parallel for better throughput and responsiveness
+- **Software design**: Loosely-coupled and cohesive classes that: 1. adhere to object-oriented programming and software design best practices, 2. offer simple plug-and-play multi-vendor support (e.g. Hugging Face, Google Cloud, Llama API)
+
 ## Get started with development
 
 1. Clone the repository.
