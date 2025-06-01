@@ -1,6 +1,62 @@
-# Buch AI FastMCP Server
+# Buch AI MCP Server
 
-This FastMCP (Model Context Protocol) server provides access to the Buch AI story generation and image creation capabilities.
+This directory contains the Model Context Protocol (MCP) server implementation for Buch AI.
+
+## Configuration
+
+The MCP server configuration is dynamically generated using the `config_generator.py` script. This ensures that:
+
+1. **UV Executable Path**: Automatically detected using `which uv` command
+2. **Project Directory**: Uses `PROJECT_ROOT` from the main `config.py` file
+
+### Generated Configuration
+
+The `config.json` file is automatically generated with the following structure:
+
+```json
+{
+  "mcpServers": {
+    "buch-ai": {
+      "command": "/path/to/uv",
+      "args": [
+        "--directory",
+        "/path/to/Buch-AI-Server/",
+        "run",
+        "app/mcp/main.py"
+      ],
+      "host": "127.0.0.1",
+      "port": 8050,
+      "timeout": 30000
+    }
+  }
+}
+```
+
+### Usage
+
+The configuration is automatically generated when running the MCP server:
+
+```bash
+python app/mcp/main.py
+```
+
+Or you can generate it manually:
+
+```bash
+python app/mcp/config_generator.py
+```
+
+## Available Tools
+
+The MCP server provides the following tools:
+
+- `generate_story_string`: Generate a complete story as a single string
+- `split_story`: Generate a story split into parts and sub-parts
+- `summarise_story`: Summarise an existing story
+- `generate_image_prompts`: Generate image prompts for story sections
+- `generate_image`: Generate an image based on a text prompt
+
+Each tool supports different model types (`lite`, `standard`, `pro`, `max`) and optional cost centre tracking.
 
 ## Features
 

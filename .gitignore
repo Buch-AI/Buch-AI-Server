@@ -155,4 +155,5 @@ crash.log
 .cursorrules
 
 # Project specific
+app/mcp/config.json
 **/output/**

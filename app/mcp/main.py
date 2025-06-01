@@ -1,4 +1,3 @@
-# server.py
 import asyncio
 import base64
 import json
@@ -6,6 +5,8 @@ from typing import List
 
 from mcp.server.fastmcp import FastMCP
 
+# Import the config generator
+from app.mcp.config_generator import write_config_file
 from app.services.image.common import ImageGenerationRequest
 from app.services.image.pollinations_ai import PollinationsAiRouterService
 from app.services.llm.common import (
@@ -216,5 +217,15 @@ def generate_image(
 
 
 if __name__ == "__main__":
-    # Run with SSE transport on port 8050
-    mcp.run(transport="sse")
+    # Generate the config file dynamically
+    print("Generating MCP configuration...")
+    write_config_file()
+
+    TRANSPORT = "stdio"
+    print(f"Running MCP server with {TRANSPORT} transport...")
+    if TRANSPORT == "stdio":
+        mcp.run(transport="stdio")
+    elif TRANSPORT == "sse":
+        mcp.run(transport="sse")
+    else:
+        raise ValueError(f"Invalid transport: {TRANSPORT}")
