@@ -1,12 +1,17 @@
 import json
+import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+# Configure logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
+
 # NOTE: Add the project root to the path so we can import from config.py
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from config import PROJECT_ROOT
+from config import PROJECT_ROOT  # noqa: E402
 
 
 def get_uv_exec_path() -> str:
@@ -50,7 +55,7 @@ def write_config_file() -> None:
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
 
-    print(f"Generated config.json at {config_path}")
+    logger.info(f"Generated config.json at {config_path}")
 
 
 if __name__ == "__main__":
