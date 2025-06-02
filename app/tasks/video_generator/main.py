@@ -5,7 +5,7 @@ import sys
 import tempfile
 import uuid
 from io import BytesIO
-from typing import List, Optional
+from typing import List, Literal, Optional
 from urllib.parse import urlparse
 
 import numpy
@@ -267,6 +267,48 @@ class VideoGenerator:
         return gradient.astype(numpy.uint8)
 
     @staticmethod
+    def create_zoom_function(
+        zoom_factor: float,
+        duration: float,
+        zoom_style: Literal["linear", "ease_in", "ease_out", "ease_in_out"],
+    ):
+        """
+        Create a zoom function that varies over time based on the specified speed curve.
+
+        Args:
+            zoom_factor: Final zoom factor (1.0 = no zoom, 1.2 = 20% zoom)
+            duration: Total duration of the zoom effect in seconds
+            zoom_style: Speed curve - "linear", "ease_in", "ease_out", or "ease_in_out"
+
+        Returns:
+            Function that takes time (t) and returns the zoom factor at that time
+        """
+
+        def zoom_func(t):
+            # Normalize time to 0-1 range
+            progress = min(t / duration, 1.0)
+
+            # Apply easing curves
+            if zoom_style == "ease_in":
+                # Quadratic ease in (slow start, fast end)
+                progress = progress**2
+            elif zoom_style == "ease_out":
+                # Quadratic ease out (fast start, slow end)
+                progress = 1 - (1 - progress) ** 2
+            elif zoom_style == "ease_in_out":
+                # Quadratic ease in-out (slow start and end, fast middle)
+                if progress < 0.5:
+                    progress = 2 * progress**2
+                else:
+                    progress = 1 - 2 * (1 - progress) ** 2
+            # "linear" or default case - no modification needed
+
+            # Interpolate between 1.0 (start) and zoom_factor (end)
+            return 1.0 + (zoom_factor - 1.0) * progress
+
+        return zoom_func
+
+    @staticmethod
     async def create_video_from_slides(
         slides: List[VideoSlide], cost_centre_id: Optional[str] = None
     ) -> bytes:
@@ -279,6 +321,10 @@ class VideoGenerator:
 
         Returns:
             bytes: The generated video as bytes
+
+        Note:
+            This function includes a zoom-in effect on images. The zoom settings are configured
+            as constants within the function and can be modified in the source code if needed.
         """
         logger.info(f"Starting video generation from {len(slides)} slides")
 
@@ -296,7 +342,16 @@ class VideoGenerator:
         VIDEO_FPS = 24
         VIDEO_CODEC = "libx264"
         AUDIO_CODEC = "aac"
+
+        # Fade effect constants
         FADE_DURATION = 0.5  # Duration of fade transitions in seconds
+
+        # Zoom effect constants
+        ENABLE_ZOOM = True  # Whether to enable the zoom-in effect on images
+        ZOOM_FACTOR = (
+            1.15  # How much to zoom in by the end (1.0 = no zoom, 1.2 = 20% zoom, etc.)
+        )
+        ZOOM_STYLE = "linear"  # Speed curve for zoom effect - "linear", "ease_in", "ease_out", or "ease_in_out"
 
         if not slides:
             raise ValueError("No slides provided")
@@ -504,6 +559,17 @@ class VideoGenerator:
             # Create composite of image and all captions
             slide_duration = current_time
             image_clip = image_clip.set_duration(slide_duration)
+
+            # Apply zoom effect if enabled
+            if ENABLE_ZOOM and ZOOM_FACTOR != 1.0 and slide_duration > 0:
+                logger.info(
+                    f"Applying zoom effect to slide {slide_idx} - Factor: {ZOOM_FACTOR}, Speed: {ZOOM_STYLE}, Duration: {slide_duration} s"
+                )
+                zoom_func = VideoGenerator.create_zoom_function(
+                    ZOOM_FACTOR, slide_duration, ZOOM_STYLE
+                )
+                image_clip = image_clip.resize(zoom_func)
+                logger.info(f"Zoom effect applied to slide {slide_idx}")
 
             # Combine all audio clips for this slide
             if audio_clips:
