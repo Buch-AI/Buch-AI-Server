@@ -225,13 +225,24 @@ class GoogleCloudDubber(Dubber):
                     caption_dubs=caption_dubs,
                 )
                 processed_slides.append(processed_slide)
-                logger.info(f"Successfully processed slide {idx}")
+                logger.info(
+                    f"Successfully processed slide {idx} with {len(caption_dubs)} audio clips"
+                )
 
             except Exception as e:
                 logger.error(f"Error processing slide {idx}: {str(e)}", exc_info=True)
                 raise
 
         logger.info(f"Successfully processed all {len(processed_slides)} slides")
+
+        # Debug: Verify all slides have audio
+        for idx, slide in enumerate(processed_slides, 1):
+            has_caption_dubs = slide.caption_dubs is not None
+            num_caption_dubs = len(slide.caption_dubs) if slide.caption_dubs else 0
+            num_captions = len(slide.captions)
+            logger.info(
+                f"Slide {idx}: has_caption_dubs={has_caption_dubs}, caption_dubs_count={num_caption_dubs}, captions_count={num_captions}"
+            )
 
         # Update cost centre with total cost if cost_centre_id is provided
         if self.cost_centre_id and total_cost > 0:

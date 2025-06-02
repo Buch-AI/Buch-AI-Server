@@ -4,8 +4,6 @@ import platform
 import subprocess
 from typing import Optional
 
-from moviepy.config import change_settings
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -63,13 +61,28 @@ def initialize_imagemagick() -> None:
     """
     Initialize ImageMagick for MoviePy usage.
 
+    In MoviePy 2.x, configuration is done via environment variables.
+    This function sets the IMAGEMAGICK_BINARY environment variable
+    if ImageMagick is found on the system.
+
     Raises:
         RuntimeError: If ImageMagick binary is not found
     """
+    # Check if IMAGEMAGICK_BINARY is already set
+    if os.getenv("IMAGEMAGICK_BINARY"):
+        logger.info(
+            f"ImageMagick binary already configured: {os.getenv('IMAGEMAGICK_BINARY')}"
+        )
+        return
+
     imagemagick_binary = get_imagemagick_binary()
     if imagemagick_binary is None:
-        raise RuntimeError(
-            "ImageMagick not found. Please install ImageMagick and ensure 'convert' binary is available in your system PATH"
+        logger.warning(
+            "ImageMagick not found. Please install ImageMagick and ensure 'convert' binary is available in your system PATH. "
+            "Some text effects may not work properly without ImageMagick."
         )
+        return
 
-    change_settings({"IMAGEMAGICK_BINARY": imagemagick_binary})
+    # Set environment variable for MoviePy 2.x
+    os.environ["IMAGEMAGICK_BINARY"] = imagemagick_binary
+    logger.info(f"ImageMagick binary configured: {imagemagick_binary}")

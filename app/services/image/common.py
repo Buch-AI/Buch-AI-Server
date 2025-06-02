@@ -6,8 +6,8 @@ from pydantic import BaseModel
 
 class ImageGenerationRequest(BaseModel):
     prompt: str
-    width: int = 720
-    height: int = 720
+    width: int = 480
+    height: int = 480
     cost_centre_id: Optional[str] = None
 
 

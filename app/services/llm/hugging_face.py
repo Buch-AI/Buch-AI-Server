@@ -15,6 +15,7 @@ from app.services.llm.common import (
     GenerateImagePromptsRequest,
     GenerateStoryRequest,
     ImagePromptsResponse,
+    LlmLogger,
     LlmRouterService,
     SplitStoryResponse,
     SummariseStoryRequest,
@@ -59,6 +60,7 @@ class HuggingFaceRouterService(LlmRouterService):
             messages = HuggingFaceConfigManager.get_prompt_story_generate(
                 request.model_type, request.prompt
             )
+            LlmLogger.log_prompt(request.cost_centre_id, messages)
 
             response = self.client.chat.completions.create(
                 messages=messages,
@@ -110,6 +112,7 @@ class HuggingFaceRouterService(LlmRouterService):
             messages = HuggingFaceConfigManager.get_prompt_story_generate(
                 request.model_type, request.prompt
             )
+            LlmLogger.log_prompt(request.cost_centre_id, messages)
 
             # For streaming, we'll track tokens for cost calculation
             prompt_tokens = sum(len(msg.get("content", "").split()) for msg in messages)
@@ -157,6 +160,7 @@ class HuggingFaceRouterService(LlmRouterService):
             messages = HuggingFaceConfigManager.get_prompt_story_split(
                 request.model_type, request.prompt
             )
+            LlmLogger.log_prompt(request.cost_centre_id, messages)
 
             response = self.client.chat.completions.create(
                 messages=messages,
@@ -222,6 +226,7 @@ class HuggingFaceRouterService(LlmRouterService):
             messages = HuggingFaceConfigManager.get_prompt_story_summarise(
                 request.model_type, request.story
             )
+            LlmLogger.log_prompt(request.cost_centre_id, messages)
 
             response = self.client.chat.completions.create(
                 messages=messages,
@@ -273,7 +278,7 @@ class HuggingFaceRouterService(LlmRouterService):
 
             # Step 1: Extract entities from the story
             entities = await self._extract_story_entities(
-                request.model_type, request.story
+                request.model_type, request.story, request.cost_centre_id
             )
 
             # Step 2: Create vector index from entities and track embedding costs
@@ -325,6 +330,7 @@ class HuggingFaceRouterService(LlmRouterService):
                     part,
                     entity_description=entity_description,
                 )
+                LlmLogger.log_prompt(request.cost_centre_id, messages)
 
                 part_response = self.client.chat.completions.create(
                     messages=messages,
@@ -374,7 +380,7 @@ class HuggingFaceRouterService(LlmRouterService):
             )
 
     async def _extract_story_entities(
-        self, model_type: ModelType, story: str
+        self, model_type: ModelType, story: str, cost_centre_id: str
     ) -> List[Dict]:
         """
         Extract entities (characters, locations) from story text using LLM.
@@ -382,6 +388,7 @@ class HuggingFaceRouterService(LlmRouterService):
         Args:
             model_type: The model type to use for entity extraction
             story: The complete story text
+            cost_centre_id: The cost centre ID to use for logging
 
         Returns:
             List of entity dictionaries containing type, name, and description
@@ -391,6 +398,7 @@ class HuggingFaceRouterService(LlmRouterService):
         )
 
         messages = HuggingFaceConfigManager.get_prompt_story_entities(model_type, story)
+        LlmLogger.log_prompt(cost_centre_id, messages)
 
         response = self.client.chat.completions.create(
             messages=messages,

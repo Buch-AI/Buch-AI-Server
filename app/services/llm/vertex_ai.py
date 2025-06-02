@@ -17,6 +17,7 @@ from app.services.llm.common import (
     GenerateImagePromptsRequest,
     GenerateStoryRequest,
     ImagePromptsResponse,
+    LlmLogger,
     LlmRouterService,
     SplitStoryResponse,
     SummariseStoryRequest,
@@ -49,6 +50,7 @@ class VertexAiRouterService(LlmRouterService):
             prompt = VertexAiConfigManager.get_prompt_story_generate(
                 request.model_type, request.prompt
             )
+            LlmLogger.log_prompt(request.cost_centre_id, prompt)
 
             model = GenerativeModel(text_generation_model_config.model_id)
             generation_config = GenerationConfig(
@@ -110,6 +112,7 @@ class VertexAiRouterService(LlmRouterService):
             prompt = VertexAiConfigManager.get_prompt_story_generate(
                 request.model_type, request.prompt
             )
+            LlmLogger.log_prompt(request.cost_centre_id, prompt)
 
             model = GenerativeModel(text_generation_model_config.model_id)
             generation_config = GenerationConfig(
@@ -175,6 +178,7 @@ class VertexAiRouterService(LlmRouterService):
             prompt = VertexAiConfigManager.get_prompt_story_split(
                 request.model_type, request.prompt
             )
+            LlmLogger.log_prompt(request.cost_centre_id, prompt)
 
             model = GenerativeModel(text_generation_model_config.model_id)
             generation_config = GenerationConfig(
@@ -250,6 +254,7 @@ class VertexAiRouterService(LlmRouterService):
             prompt = VertexAiConfigManager.get_prompt_story_summarise(
                 request.model_type, request.story
             )
+            LlmLogger.log_prompt(request.cost_centre_id, prompt)
 
             model = GenerativeModel(text_generation_model_config.model_id)
             generation_config = GenerationConfig(
@@ -311,7 +316,7 @@ class VertexAiRouterService(LlmRouterService):
 
             # Step 1: Extract entities from the story
             entities = await self._extract_story_entities(
-                request.model_type, request.story
+                request.model_type, request.story, request.cost_centre_id
             )
 
             # Step 2: Create vector index from entities and track embedding costs
@@ -367,6 +372,7 @@ class VertexAiRouterService(LlmRouterService):
                     part,
                     entity_description=entity_description,
                 )
+                LlmLogger.log_prompt(request.cost_centre_id, prompt)
 
                 prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
                 part_response = model.generate_content(
@@ -417,7 +423,7 @@ class VertexAiRouterService(LlmRouterService):
             )
 
     async def _extract_story_entities(
-        self, model_type: ModelType, story: str
+        self, model_type: ModelType, story: str, cost_centre_id: str
     ) -> List[Dict]:
         """
         Extract entities (characters, locations) from story text using LLM.
@@ -425,6 +431,7 @@ class VertexAiRouterService(LlmRouterService):
         Args:
             model_type: The model type to use for entity extraction
             story: The complete story text
+            cost_centre_id: The cost centre ID to use for logging
 
         Returns:
             List of entity dictionaries containing type, name, and description
@@ -434,6 +441,7 @@ class VertexAiRouterService(LlmRouterService):
         )
 
         prompt = VertexAiConfigManager.get_prompt_story_entities(model_type, story)
+        LlmLogger.log_prompt(cost_centre_id, prompt)
 
         model = GenerativeModel(text_generation_model_config.model_id)
         generation_config = GenerationConfig(
@@ -441,6 +449,7 @@ class VertexAiRouterService(LlmRouterService):
             temperature=0.2,  # Lower temperature for more deterministic output
             top_p=0.9,
         )
+        # TODO: Is this cost being tracked?
 
         prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
         response = model.generate_content(
