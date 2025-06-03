@@ -17,7 +17,7 @@ from app.services.llm.common import (
 from app.services.llm.vertex_ai import VertexAiRouterService
 
 # Configure logging
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Initialize services

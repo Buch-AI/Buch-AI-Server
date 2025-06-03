@@ -39,7 +39,7 @@ from config import ASSETS_P_DIR, ENV, GCLOUD_STB_CREATIONS_NAME
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
