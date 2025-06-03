@@ -9,7 +9,7 @@ from google.cloud import storage
 from pydantic import BaseModel
 
 from app.models.llm import ModelType
-from config import GCLOUD_STB_CREATIONS_NAME, PROJECT_ROOT
+from config import ENV, GCLOUD_STB_CREATIONS_NAME, PROJECT_ROOT
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR)
@@ -77,6 +77,10 @@ class LlmLogger:
             cost_centre_id: The cost centre ID to use as filename
             prompt: The prompt text to log
         """
+        # TODO: Remove this once we have a proper logging system.
+        if ENV != "d":
+            return
+
         if not cost_centre_id or not cost_centre_id.strip():
             logger.error("cost_centre_id cannot be empty or None")
             return
