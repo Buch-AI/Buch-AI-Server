@@ -230,9 +230,7 @@ class VideoGenerator:
     # NOTE: Utility functions for optimized video generation
 
     @staticmethod
-    def optimize_image_for_video(
-        image_bytes: bytes, target_width: int = 480
-    ) -> numpy.ndarray:
+    def _resize_image(image_bytes: bytes, target_width: int) -> numpy.ndarray:
         """
         Optimize image size and format for video processing.
 
@@ -259,13 +257,13 @@ class VideoGenerator:
         return numpy.array(resized)
 
     @staticmethod
-    def create_memory_video_if_small(clip, max_size_mb: int = 50) -> Optional[bytes]:
+    def _create_clip_in_memory(clip, max_size_mb: int = 50) -> Optional[bytes]:
         """
         Render small clips to memory instead of disk for better performance.
 
         Args:
             clip: MoviePy clip to render
-            max_size_mb: Maximum size threshold for memory rendering
+            max_size_mb: Maximum size threshold for memory rendering in MB
 
         Returns:
             bytes or None: Video bytes if small enough, None otherwise
@@ -288,7 +286,9 @@ class VideoGenerator:
         return None
 
     @staticmethod
-    def write_video_optimized(clip, output_path: str, fps: int = 20) -> None:
+    def _save_clip(
+        clip, output_path: str, fps: int, video_codec: str, audio_codec: str
+    ) -> None:
         """
         Write video with optimized encoding settings.
 
@@ -299,8 +299,8 @@ class VideoGenerator:
         """
         clip.write_videofile(
             output_path,
-            codec="libx264",
-            audio_codec="aac",
+            codec=video_codec,
+            audio_codec=audio_codec,
             fps=fps,
             preset="fast",  # Balanced speed vs quality
             ffmpeg_params=[
@@ -316,7 +316,7 @@ class VideoGenerator:
         )
 
     @staticmethod
-    def cleanup_clips(clips: List) -> None:
+    def _close_clips(clips: List) -> None:
         """
         Properly clean up MoviePy clips to free memory.
 
@@ -331,7 +331,7 @@ class VideoGenerator:
                     logger.warning(f"Error closing clip: {e}")
 
     @staticmethod
-    def process_slides_in_batches(slides: List[VideoSlide], batch_size: int = 3):
+    def _get_slide_batch(slides: List[VideoSlide], batch_size: int):
         """
         Process slides in smaller batches to manage memory usage.
 
@@ -348,7 +348,7 @@ class VideoGenerator:
     # NOTE: Video effects
 
     @staticmethod
-    def get_gradient_background(
+    def _get_gradient_background(
         width: int, height: int, alpha_bottom: float = 0.7, alpha_top: float = 0.0
     ) -> numpy.ndarray:
         """
@@ -379,7 +379,7 @@ class VideoGenerator:
         return gradient.astype(numpy.uint8)
 
     @staticmethod
-    def create_centered_zoom_function(
+    def _create_zoom_func(
         zoom_factor: float,
         duration: float,
         zoom_style: Literal["linear", "ease_in", "ease_out", "ease_in_out"],
@@ -431,7 +431,7 @@ class VideoGenerator:
         return zoom_func
 
     @staticmethod
-    def apply_centered_zoom(
+    def _apply_zoom_to_clip(
         image_clip,
         zoom_factor: float,
         duration: float,
@@ -453,7 +453,7 @@ class VideoGenerator:
         Returns:
             ImageClip with centered zoom effect applied
         """
-        zoom_func = VideoGenerator.create_centered_zoom_function(
+        zoom_func = VideoGenerator._create_zoom_func(
             zoom_factor, duration, zoom_style, video_width, video_height
         )
 
@@ -511,7 +511,7 @@ class VideoGenerator:
     # NOTE: Captions and text
 
     @staticmethod
-    def get_caption_duration(text: str, wpm: int) -> float:
+    def _calculate_caption_duration(text: str, wpm: int) -> float:
         """
         Calculate the duration needed to read a caption at a given words per minute rate.
 
@@ -533,7 +533,7 @@ class VideoGenerator:
 
     @staticmethod
     @lru_cache(maxsize=128)
-    def create_cached_text_clip(
+    def _create_text_clip(
         text: str,
         font_size: int,
         color: str,
@@ -565,7 +565,7 @@ class VideoGenerator:
         )
 
     @staticmethod
-    async def create_text_clips_parallel(
+    async def _create_text_clips(
         captions: List[str], font_size: int, font_color: str, font_name: str, width: int
     ) -> List[TextClip]:
         """
@@ -586,7 +586,7 @@ class VideoGenerator:
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             # Create partial function for text clip creation
             create_clip_func = partial(
-                VideoGenerator.create_cached_text_clip,
+                VideoGenerator._create_text_clip,
                 font_size=font_size,
                 color=font_color,
                 font_path=font_name,
@@ -632,31 +632,32 @@ class VideoGenerator:
         VIDEO_HEIGHT = 720
 
         # Video generation constants
+        VIDEO_FPS = 20
+        VIDEO_CODEC = "libx264"
+        AUDIO_CODEC = "aac"
+
+        # Fade effect constants
+        FADE_DURATION = 0.3
+
+        # Zoom effect constants
+        ENABLE_ZOOM = False  # Whether to enable the zoom-in effect on images
+        ZOOM_FACTOR = 1.08
+        ZOOM_STYLE = "linear"  # Speed curve for zoom effect - "linear", "ease_in", "ease_out", or "ease_in_out"
+
+        # Dubbing constants
+        ENABLE_DUBBING = True  # Whether to enable text-to-speech audio generation
+        DUBBING_WPM = 240
+
+        # Caption constants
         FONT_SIZE = 20
         FONT_COLOR = "white"
         FONT_NAME = str(
             os.path.join(ASSETS_P_DIR, "Fredoka-VariableFont_wdth,wght.ttf")
         )
         CAPTION_PADDING = 20  # Padding from the bottom and sides of the frame
-        VIDEO_FPS = 20  # OPTIMIZED: Reduced from 24 to 20 for better performance
-        VIDEO_CODEC = "libx264"  # noqa: F841
-        AUDIO_CODEC = "aac"  # noqa: F841
-
-        # Fade effect constants (OPTIMIZED)
-        FADE_DURATION = 0.3  # OPTIMIZED: Reduced from 0.5 for faster processing
-
-        # Zoom effect constants
-        ENABLE_ZOOM = False  # Whether to enable the zoom-in effect on images
-        ZOOM_FACTOR = 1.08  # OPTIMIZED: Reduced from 1.15 for faster processing
-        ZOOM_STYLE = "linear"  # Speed curve for zoom effect - "linear", "ease_in", "ease_out", or "ease_in_out"
-
-        # Dubbing constants
-        ENABLE_DUBBING = True  # Whether to enable text-to-speech audio generation
-        WORDS_PER_MINUTE = 240
 
         # Performance constants
-        BATCH_SIZE = 3  # Process slides in batches to manage memory
-        MAX_WORKERS = 4  # Maximum parallel workers for text processing  # noqa: F841
+        SLIDE_BATCH_SIZE = 3  # Process slides in batches to manage memory
 
         if not slides:
             raise ValueError("No slides provided")
@@ -693,7 +694,7 @@ class VideoGenerator:
                 )
             elif total_audio_clips != total_captions:
                 logger.warning(
-                    f"Audio clip count mismatch: {total_audio_clips} clips vs {total_captions} captions"
+                    f"Audio clip count mismatch: {total_audio_clips} clips vs. {total_captions} captions"
                 )
         else:
             logger.info("Dubbing disabled - using original slides without audio")
@@ -702,15 +703,13 @@ class VideoGenerator:
         slide_clips = []
 
         # Process slides in batches for better memory management
-        for batch_slides in VideoGenerator.process_slides_in_batches(
-            _slides, BATCH_SIZE
-        ):
+        for batch_slides in VideoGenerator._get_slide_batch(_slides, SLIDE_BATCH_SIZE):
             batch_clips = []
 
             for slide_idx, slide in enumerate(batch_slides, 1):
                 # Calculate global slide index
                 global_slide_idx = len(slide_clips) + slide_idx
-                logger.info(f"Processing slide {global_slide_idx}/{len(_slides)}")
+                logger.info(f"Processing slide {global_slide_idx}/{len(_slides)}...")
 
                 # Verify slide has captions and audio (only if dubbing is enabled)
                 if ENABLE_DUBBING:
@@ -730,18 +729,15 @@ class VideoGenerator:
                             f"Caption and audio count mismatch for slide {global_slide_idx}"
                         )
 
-                # OPTIMIZATION: Use optimized image processing
-                optimized_image = VideoGenerator.optimize_image_for_video(
-                    slide.image, VIDEO_WIDTH
-                )
+                resized_image = VideoGenerator._resize_image(slide.image, VIDEO_WIDTH)
                 logger.info(
-                    f"Slide {global_slide_idx} image optimized to {optimized_image.shape}"
+                    f"Slide {global_slide_idx} image resized to {resized_image.shape}"
                 )
 
                 # Create a blank black canvas with the target dimensions
-                canvas_height, canvas_width = optimized_image.shape[:2]
+                canvas_height, canvas_width = resized_image.shape[:2]
 
-                # Center the optimized image on a black canvas if needed
+                # Center the resized image on a black canvas if needed
                 if canvas_width != VIDEO_WIDTH or canvas_height < VIDEO_HEIGHT:
                     canvas = numpy.zeros(
                         (VIDEO_HEIGHT, VIDEO_WIDTH, 3), dtype=numpy.uint8
@@ -755,12 +751,12 @@ class VideoGenerator:
                     end_y = min(paste_y + canvas_height, VIDEO_HEIGHT)
                     end_x = min(paste_x + canvas_width, VIDEO_WIDTH)
 
-                    canvas[paste_y:end_y, paste_x:end_x] = optimized_image[
+                    canvas[paste_y:end_y, paste_x:end_x] = resized_image[
                         : end_y - paste_y, : end_x - paste_x
                     ]
                     final_image = canvas
                 else:
-                    final_image = optimized_image
+                    final_image = resized_image
 
                 # Create image clip from the optimized image
                 image_clip = ImageClip(final_image)
@@ -774,7 +770,7 @@ class VideoGenerator:
                 temp_audio_files = []
 
                 logger.info(
-                    f"Processing {len(slide.captions)} captions for slide {global_slide_idx}"
+                    f"Processing {len(slide.captions)} captions for slide {global_slide_idx}..."
                 )
 
                 # Process captions differently based on whether dubbing is enabled
@@ -787,7 +783,7 @@ class VideoGenerator:
 
                 for idx, (caption, audio_bytes) in enumerate(caption_audio_pairs):
                     logger.info(
-                        f"Processing caption {idx + 1}/{len(slide.captions)}: ENABLE_DUBBING={ENABLE_DUBBING}, has_audio_bytes={audio_bytes is not None}, audio_bytes_size={len(audio_bytes) if audio_bytes else 0}"
+                        f"Processing caption {idx + 1}/{len(slide.captions)}: ENABLE_DUBBING={ENABLE_DUBBING}, has_audio_bytes={audio_bytes is not None}, audio_bytes_size={len(audio_bytes) if audio_bytes else 0}..."
                     )
 
                     if ENABLE_DUBBING and audio_bytes:
@@ -817,8 +813,8 @@ class VideoGenerator:
                                     f"Invalid audio clip duration: {audio_clip.duration}"
                                 )
                                 # Use text-based duration as fallback instead of skipping
-                                duration = VideoGenerator.get_caption_duration(
-                                    caption, WORDS_PER_MINUTE
+                                duration = VideoGenerator._calculate_caption_duration(
+                                    caption, DUBBING_WPM
                                 )
                                 audio_clip = None
                                 logger.warning(
@@ -834,8 +830,8 @@ class VideoGenerator:
                                 f"Error processing audio clip: {str(e)}", exc_info=True
                             )
                             # Use text-based duration as fallback instead of skipping
-                            duration = VideoGenerator.get_caption_duration(
-                                caption, WORDS_PER_MINUTE
+                            duration = VideoGenerator._calculate_caption_duration(
+                                caption, DUBBING_WPM
                             )
                             audio_clip = None
                             logger.warning(
@@ -843,16 +839,15 @@ class VideoGenerator:
                             )
                     else:
                         # Calculate duration based on text length when dubbing is disabled
-                        duration = VideoGenerator.get_caption_duration(
-                            caption, WORDS_PER_MINUTE
+                        duration = VideoGenerator._calculate_caption_duration(
+                            caption, DUBBING_WPM
                         )
                         logger.info(
                             f"Calculated duration for caption {idx + 1}: {duration} seconds (dubbing disabled or no audio_bytes)"
                         )
                         audio_clip = None
 
-                    # OPTIMIZATION: Use cached text clip creation
-                    text_clip = VideoGenerator.create_cached_text_clip(
+                    text_clip = VideoGenerator._create_text_clip(
                         text=caption,
                         font_size=FONT_SIZE,
                         color=FONT_COLOR,
@@ -871,7 +866,7 @@ class VideoGenerator:
                     )  # Make gradient taller for more fade
 
                     # Create gradient background
-                    gradient = VideoGenerator.get_gradient_background(
+                    gradient = VideoGenerator._get_gradient_background(
                         width=VIDEO_WIDTH,
                         height=gradient_height,
                         alpha_bottom=1.0,  # Fully opaque at bottom
@@ -882,7 +877,7 @@ class VideoGenerator:
                     gradient_clip = ImageClip(gradient)
 
                     # Create shadow text clip
-                    shadow_clip = VideoGenerator.create_cached_text_clip(
+                    shadow_clip = VideoGenerator._create_text_clip(
                         text=caption,
                         font_size=FONT_SIZE,
                         color="black",
@@ -951,7 +946,7 @@ class VideoGenerator:
                     logger.info(
                         f"Applying zoom effect to slide {global_slide_idx} - Factor: {ZOOM_FACTOR}, Speed: {ZOOM_STYLE}, Duration: {slide_duration} s"
                     )
-                    image_clip = VideoGenerator.apply_centered_zoom(
+                    image_clip = VideoGenerator._apply_zoom_to_clip(
                         image_clip,
                         ZOOM_FACTOR,
                         slide_duration,
@@ -1009,14 +1004,14 @@ class VideoGenerator:
             # Add batch clips to main list and clean up batch
             slide_clips.extend(batch_clips)
 
-            # OPTIMIZATION: Clean up batch clips to free memory
+            # Clean up batch clips to free memory
             logger.info(
-                f"Processed batch with {len(batch_clips)} slides, cleaning up batch memory"
+                f"Processed batch with {len(batch_clips)} slides, cleaning up batch memory..."
             )
-            VideoGenerator.cleanup_clips(batch_clips)
+            VideoGenerator._close_clips(batch_clips)
 
         # Concatenate all slides
-        logger.info(f"Concatenating {len(slide_clips)} slide clips")
+        logger.info(f"Concatenating {len(slide_clips)} slide clips...")
         final_clip = concatenate_videoclips(slide_clips, method="compose")
         total_duration = final_clip.duration
         logger.info(f"Final video duration: {total_duration} seconds")
@@ -1032,7 +1027,7 @@ class VideoGenerator:
                         f"  Slide {i + 1}: has_audio={has_audio}, duration={duration}"
                     )
             else:
-                logger.info("Final video has no audio track (dubbing disabled)")
+                logger.info("Final video has no audio track — dubbing disabled")
         else:
             audio_duration = (
                 final_clip.audio.duration
@@ -1043,10 +1038,8 @@ class VideoGenerator:
                 f"Final video has audio track with duration: {audio_duration} seconds"
             )
 
-        # OPTIMIZATION: Try memory-based rendering for small videos first
-        video_bytes = VideoGenerator.create_memory_video_if_small(
-            final_clip, max_size_mb=50
-        )
+        # Try memory-based rendering for small videos first
+        video_bytes = VideoGenerator._create_clip_in_memory(final_clip, max_size_mb=50)
 
         if video_bytes is not None:
             logger.info("Video rendered to memory successfully")
@@ -1060,8 +1053,8 @@ class VideoGenerator:
 
             try:
                 # Use optimized video writing
-                VideoGenerator.write_video_optimized(
-                    final_clip, temp_output_path, VIDEO_FPS
+                VideoGenerator._save_clip(
+                    final_clip, temp_output_path, VIDEO_FPS, VIDEO_CODEC, AUDIO_CODEC
                 )
                 logger.info(f"Successfully wrote video to {temp_output_path}")
 
@@ -1076,7 +1069,7 @@ class VideoGenerator:
                     os.remove(temp_output_path)
                     logger.info(f"Removed temporary file {temp_output_path}")
 
-        # OPTIMIZATION: Clean up final clip to free memory
+        # Clean up final clip to free memory
         try:
             final_clip.close()
             logger.info("Cleaned up final clip to free memory")
