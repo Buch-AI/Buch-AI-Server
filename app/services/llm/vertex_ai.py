@@ -47,8 +47,10 @@ class VertexAiRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            prompt = VertexAiConfigManager.get_prompt_story_generate(
-                request.model_type, request.prompt
+            prompt = str(
+                VertexAiConfigManager.get_prompt_story_generate(
+                    request.model_type, request.prompt
+                )
             )
             LlmLogger.log_prompt(request.cost_centre_id, prompt)
 
@@ -109,8 +111,10 @@ class VertexAiRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            prompt = VertexAiConfigManager.get_prompt_story_generate(
-                request.model_type, request.prompt
+            prompt = str(
+                VertexAiConfigManager.get_prompt_story_generate(
+                    request.model_type, request.prompt
+                )
             )
             LlmLogger.log_prompt(request.cost_centre_id, prompt)
 
@@ -175,8 +179,10 @@ class VertexAiRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            prompt = VertexAiConfigManager.get_prompt_story_split(
-                request.model_type, request.prompt
+            prompt = str(
+                VertexAiConfigManager.get_prompt_story_split(
+                    request.model_type, request.prompt
+                )
             )
             LlmLogger.log_prompt(request.cost_centre_id, prompt)
 
@@ -251,8 +257,10 @@ class VertexAiRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            prompt = VertexAiConfigManager.get_prompt_story_summarise(
-                request.model_type, request.story
+            prompt = str(
+                VertexAiConfigManager.get_prompt_story_summarise(
+                    request.model_type, request.story
+                )
             )
             LlmLogger.log_prompt(request.cost_centre_id, prompt)
 
@@ -366,11 +374,13 @@ class VertexAiRouterService(LlmRouterService):
                 total_cost += query_embedding_cost
 
                 # Use the updated get_prompt_image_generate method with entity_description
-                prompt = VertexAiConfigManager.get_prompt_image_generate(
-                    request.model_type,
-                    request.story,
-                    part,
-                    entity_description=entity_description,
+                prompt = str(
+                    VertexAiConfigManager.get_prompt_image_generate(
+                        request.model_type,
+                        request.story,
+                        part,
+                        entity_description=entity_description,
+                    )
                 )
                 LlmLogger.log_prompt(request.cost_centre_id, prompt)
 
@@ -440,7 +450,7 @@ class VertexAiRouterService(LlmRouterService):
             VertexAiConfigManager.get_text_generation_model_config(model_type)
         )
 
-        prompt = VertexAiConfigManager.get_prompt_story_entities(model_type, story)
+        prompt = str(VertexAiConfigManager.get_prompt_story_entities(model_type, story))
         LlmLogger.log_prompt(cost_centre_id, prompt)
 
         model = GenerativeModel(text_generation_model_config.model_id)

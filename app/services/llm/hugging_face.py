@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 from huggingface_hub import AsyncInferenceClient, InferenceClient
 
 from app.models.cost_centre import CostCentreManager
-from app.models.llm import HuggingFaceConfigManager, ModelType
+from app.models.llm import HuggingFaceConfigManager, ModelType, Prompt
 from app.services.llm.common import (
     CostUsage,
     GenerateImagePromptsRequest,
@@ -48,6 +48,13 @@ class HuggingFaceRouterService(LlmRouterService):
             base_url="https://api-inference.huggingface.co", token=self.api_key
         )
 
+    def _convert_prompt_to_messages(self, prompt: Prompt) -> List[Dict[str, str]]:
+        """Convert a Prompt object to HuggingFace message format."""
+        return [
+            {"role": "system", "content": prompt.system_message},
+            {"role": "user", "content": prompt.user_message},
+        ]
+
     async def generate_story_string(
         self, request: GenerateStoryRequest
     ) -> TextResponse:
@@ -57,10 +64,11 @@ class HuggingFaceRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            messages = HuggingFaceConfigManager.get_prompt_story_generate(
+            prompt = HuggingFaceConfigManager.get_prompt_story_generate(
                 request.model_type, request.prompt
             )
-            LlmLogger.log_prompt(request.cost_centre_id, messages)
+            messages = self._convert_prompt_to_messages(prompt)
+            LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
             response = self.client.chat.completions.create(
                 messages=messages,
@@ -109,10 +117,11 @@ class HuggingFaceRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            messages = HuggingFaceConfigManager.get_prompt_story_generate(
+            prompt = HuggingFaceConfigManager.get_prompt_story_generate(
                 request.model_type, request.prompt
             )
-            LlmLogger.log_prompt(request.cost_centre_id, messages)
+            messages = self._convert_prompt_to_messages(prompt)
+            LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
             # For streaming, we'll track tokens for cost calculation
             prompt_tokens = sum(len(msg.get("content", "").split()) for msg in messages)
@@ -157,10 +166,11 @@ class HuggingFaceRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            messages = HuggingFaceConfigManager.get_prompt_story_split(
+            prompt = HuggingFaceConfigManager.get_prompt_story_split(
                 request.model_type, request.prompt
             )
-            LlmLogger.log_prompt(request.cost_centre_id, messages)
+            messages = self._convert_prompt_to_messages(prompt)
+            LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
             response = self.client.chat.completions.create(
                 messages=messages,
@@ -223,10 +233,11 @@ class HuggingFaceRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            messages = HuggingFaceConfigManager.get_prompt_story_summarise(
+            prompt = HuggingFaceConfigManager.get_prompt_story_summarise(
                 request.model_type, request.story
             )
-            LlmLogger.log_prompt(request.cost_centre_id, messages)
+            messages = self._convert_prompt_to_messages(prompt)
+            LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
             response = self.client.chat.completions.create(
                 messages=messages,
@@ -324,13 +335,14 @@ class HuggingFaceRouterService(LlmRouterService):
                 total_cost += query_embedding_cost
 
                 # Use the updated get_prompt_image_generate method with entity_description
-                messages = HuggingFaceConfigManager.get_prompt_image_generate(
+                prompt = HuggingFaceConfigManager.get_prompt_image_generate(
                     request.model_type,
                     request.story,
                     part,
                     entity_description=entity_description,
                 )
-                LlmLogger.log_prompt(request.cost_centre_id, messages)
+                messages = self._convert_prompt_to_messages(prompt)
+                LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
                 part_response = self.client.chat.completions.create(
                     messages=messages,
@@ -397,8 +409,9 @@ class HuggingFaceRouterService(LlmRouterService):
             HuggingFaceConfigManager.get_text_generation_model_config(model_type)
         )
 
-        messages = HuggingFaceConfigManager.get_prompt_story_entities(model_type, story)
-        LlmLogger.log_prompt(cost_centre_id, messages)
+        prompt = HuggingFaceConfigManager.get_prompt_story_entities(model_type, story)
+        messages = self._convert_prompt_to_messages(prompt)
+        LlmLogger.log_prompt(cost_centre_id, str(prompt))
 
         response = self.client.chat.completions.create(
             messages=messages,

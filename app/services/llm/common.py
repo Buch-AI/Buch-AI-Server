@@ -103,7 +103,7 @@ class LlmLogger:
 
         # Prepare log entry with timestamp and caller info
         timestamp = datetime.utcnow().isoformat()
-        log_entry = f"[{timestamp}] [{caller_info}] {prompt}\n\n\n\n"
+        log_entry = f"[{timestamp}] [{caller_info}]\n\n{prompt}\n\n\n\n"
 
         try:
             # Append to log file (create if doesn't exist)
