@@ -10,7 +10,7 @@ from app.server.routers.auth_routes import User, get_current_active_user
 from app.server.routers.creation_routes import CreationProfile
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Create a router for user-specific operations

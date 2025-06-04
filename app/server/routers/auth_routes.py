@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from config import AUTH_JWT_KEY
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Create a router for authentication operations

@@ -12,7 +12,7 @@ from app.models.llm import ModelType
 from config import ENV, GCLOUD_STB_CREATIONS_NAME, PROJECT_ROOT
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

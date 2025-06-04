@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # NOTE: Add the project root to the path so we can import from config.py

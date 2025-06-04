@@ -24,7 +24,7 @@ from app.services.llm.common import (
 from config import HF_API_KEY
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize cost centre manager

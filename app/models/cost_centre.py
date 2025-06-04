@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from google.cloud import bigquery
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

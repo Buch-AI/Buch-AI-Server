@@ -6,7 +6,7 @@ from google.cloud import bigquery
 from pydantic import BaseModel
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
