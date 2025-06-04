@@ -14,7 +14,7 @@ from app.tasks.video_generator.video_slide import VideoSlide
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -185,14 +185,14 @@ class GoogleCloudDubber(Dubber):
         Returns:
             List[VideoSlide]: List of VideoSlide objects with the generated audio file as bytes
         """
-        logger.info(f"Processing {len(slides)} slides for audio generation")
+        logger.info(f"Processing {len(slides)} slides for audio generation...")
         processed_slides = []
         total_characters = 0
         total_cost = 0.0
 
         for idx, slide in enumerate(slides, 1):
             logger.info(
-                f"Processing slide {idx}/{len(slides)} with {len(slide.captions)} captions"
+                f"Processing slide {idx}/{len(slides)} with {len(slide.captions)} captions..."
             )
 
             try:
@@ -200,7 +200,7 @@ class GoogleCloudDubber(Dubber):
                 caption_dubs = []
                 for caption_idx, caption in enumerate(slide.captions, 1):
                     logger.info(
-                        f"Generating audio for caption {caption_idx}/{len(slide.captions)}"
+                        f"Generating audio for caption {caption_idx}/{len(slide.captions)}..."
                     )
                     audio_content = self._synthesize_speech(caption)
 

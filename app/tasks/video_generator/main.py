@@ -6,7 +6,6 @@ Also, I think I just witnessed Cursor autocompleting the meme above. AI is insan
 
 import asyncio
 import concurrent.futures
-import io
 import logging
 import os
 import sys
@@ -39,7 +38,7 @@ from config import ASSETS_P_DIR, ENV, GCLOUD_STB_CREATIONS_NAME
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -257,35 +256,6 @@ class VideoGenerator:
         return numpy.array(resized)
 
     @staticmethod
-    def _create_clip_in_memory(clip, max_size_mb: int = 50) -> Optional[bytes]:
-        """
-        Render small clips to memory instead of disk for better performance.
-
-        Args:
-            clip: MoviePy clip to render
-            max_size_mb: Maximum size threshold for memory rendering in MB
-
-        Returns:
-            bytes or None: Video bytes if small enough, None otherwise
-        """
-        # Estimate video size (rough calculation)
-        duration = clip.duration if hasattr(clip, "duration") else 1
-        estimated_size_mb = duration * 0.5  # Rough estimate: 0.5MB per second
-
-        if estimated_size_mb < max_size_mb:
-            try:
-                memory_file = io.BytesIO()
-                clip.write_videofile(
-                    memory_file, codec="libx264", audio_codec="aac", preset="fast"
-                )
-                return memory_file.getvalue()
-            except Exception as e:
-                logger.warning(f"Memory rendering failed, falling back to disk: {e}")
-                return None
-
-        return None
-
-    @staticmethod
     def _save_clip(
         clip, output_path: str, fps: int, video_codec: str, audio_codec: str
     ) -> None:
@@ -314,21 +284,6 @@ class VideoGenerator:
                 "yuv420p",  # Ensure compatibility
             ],
         )
-
-    @staticmethod
-    def _close_clips(clips: List) -> None:
-        """
-        Properly clean up MoviePy clips to free memory.
-
-        Args:
-            clips: List of clips to clean up
-        """
-        for clip in clips:
-            if hasattr(clip, "close"):
-                try:
-                    clip.close()
-                except Exception as e:
-                    logger.warning(f"Error closing clip: {e}")
 
     @staticmethod
     def _get_slide_batch(slides: List[VideoSlide], batch_size: int):
@@ -1004,12 +959,6 @@ class VideoGenerator:
             # Add batch clips to main list and clean up batch
             slide_clips.extend(batch_clips)
 
-            # Clean up batch clips to free memory
-            logger.info(
-                f"Processed batch with {len(batch_clips)} slides, cleaning up batch memory..."
-            )
-            VideoGenerator._close_clips(batch_clips)
-
         # Concatenate all slides
         logger.info(f"Concatenating {len(slide_clips)} slide clips...")
         final_clip = concatenate_videoclips(slide_clips, method="compose")
@@ -1038,36 +987,29 @@ class VideoGenerator:
                 f"Final video has audio track with duration: {audio_duration} seconds"
             )
 
-        # Try memory-based rendering for small videos first
-        video_bytes = VideoGenerator._create_clip_in_memory(final_clip, max_size_mb=50)
+        # Create a temporary file for video rendering
+        temp_output_path = os.path.join(
+            tempfile.gettempdir(), f"video_{uuid.uuid4().hex[:8]}.mp4"
+        )
+        logger.info(f"Writing final video to {temp_output_path}")
 
-        if video_bytes is not None:
-            logger.info("Video rendered to memory successfully")
-        else:
-            # Fall back to optimized disk-based rendering
-            # Create a temporary file with better naming
-            temp_output_path = os.path.join(
-                tempfile.gettempdir(), f"optimized_video_{uuid.uuid4().hex[:8]}.mp4"
+        try:
+            # Use optimized video writing
+            VideoGenerator._save_clip(
+                final_clip, temp_output_path, VIDEO_FPS, VIDEO_CODEC, AUDIO_CODEC
             )
-            logger.info(f"Writing final video to {temp_output_path}")
+            logger.info(f"Successfully wrote video to {temp_output_path}")
 
-            try:
-                # Use optimized video writing
-                VideoGenerator._save_clip(
-                    final_clip, temp_output_path, VIDEO_FPS, VIDEO_CODEC, AUDIO_CODEC
-                )
-                logger.info(f"Successfully wrote video to {temp_output_path}")
+            # Read the temporary file into bytes
+            with open(temp_output_path, "rb") as f:
+                video_bytes = f.read()
+            logger.info(f"Read {len(video_bytes)} bytes from {temp_output_path}")
 
-                # Read the temporary file into bytes
-                with open(temp_output_path, "rb") as f:
-                    video_bytes = f.read()
-                logger.info(f"Read {len(video_bytes)} bytes from {temp_output_path}")
-
-            finally:
-                # Clean up temporary file
-                if os.path.exists(temp_output_path):
-                    os.remove(temp_output_path)
-                    logger.info(f"Removed temporary file {temp_output_path}")
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_output_path):
+                os.remove(temp_output_path)
+                logger.info(f"Removed temporary file {temp_output_path}")
 
         # Clean up final clip to free memory
         try:
