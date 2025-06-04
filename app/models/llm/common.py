@@ -67,7 +67,7 @@ class ConfigManager(ABC):
         """Get the formatted prompt for story generation."""
         return Prompt(
             system_message="You are a creative story writer.",
-            user_message=f"Write a story based on this prompt: {user_prompt}",
+            user_message=f'Write a story based on this prompt:\n"""\n{user_prompt}\n"""',
         )
 
     @staticmethod
@@ -75,16 +75,25 @@ class ConfigManager(ABC):
         """Get the formatted prompt for story splitting."""
         _user_prompt = user_prompt.replace("\n", " ")
         return Prompt(
-            system_message="You are a story analyzer. Your job is to re-format and split story text into a pre-defined number of parts and sub-parts, inserting a [PART] tag between each part and a [SUBPART] tag between each sub-part. Remove empty lines if the text belongs to the same part. Do not include any other text in your response. Do not include section titles.",
-            user_message=f"Split the following story into 4 parts and 3 sub-parts per part: {_user_prompt}",
+            system_message=(
+                "You are a story analyzer. "
+                "Your job is to re-format and split story text into a pre-defined number of parts and sub-parts, inserting a [PART] tag between each part and a [SUBPART] tag between each sub-part. "
+                "Remove empty lines if the text belongs to the same part. "
+                "Do not include any other text in your response. "
+                "Do not include section titles."
+            ),
+            user_message=f'Split the following story into 4 parts and 3 sub-parts per part:\n"""\n{_user_prompt}\n"""',
         )
 
     @staticmethod
     def get_prompt_story_summarise(model_type: ModelType, story: str) -> Prompt:
         """Get the formatted prompt for story summarisation."""
         return Prompt(
-            system_message="You are an expert at summarizing stories and text. Create a concise summary that captures the key elements, main plot points, and core themes of the provided text within 3 sentences.",
-            user_message=f"Summarize the following story: {story}",
+            system_message=(
+                "You are an expert at summarizing stories and text. "
+                "Create a concise summary that captures the key elements, main plot points, and core themes of the provided text within 3 sentences."
+            ),
+            user_message=f'Summarize the following story:\n"""\n{story}\n"""',
         )
 
     @staticmethod
@@ -95,16 +104,16 @@ class ConfigManager(ABC):
             user_message=(
                 "Extract the key visual elements that should appear in a scene illustration for the following story in the following JSON format:\n"
                 '"""\n'
-                "{"
-                '    "type": (One of the following options: "character", "location"),'
-                '    "name": (The name of the entity),'
-                '    "description": (The visual description of the entity that will be used in the image prompt),'
-                "}"
+                "{\n"
+                '    "type": (One of the following options: "character", "location"),\n'
+                '    "name": (The name of the entity),\n'
+                '    "description": (The visual description of the entity that will be used in the image prompt),\n'
+                "}\n"
                 '"""\n'
                 "\n"
                 "Refer to the following story:\n"
                 '"""\n'
-                f"{story}"
+                f"{story}\n"
                 '"""\n'
             ),
         )
@@ -128,14 +137,14 @@ class ConfigManager(ABC):
             "You are an expert at creating image generation prompts. "
             "Given a story or text passage, create a descriptive prompt that captures the essence of the text for an image generation AI. "
             "Be specific, detailed, and concise. Keep the prompt within 3 sentences. "
-            "Do not include visual elements that are not present in this section of the story. "
+            "Do not include visual elements that are not present in this section of the story."
         )
 
         user_message = ""
         if entity_description:
-            user_message += f"\n\nVisual elements that appear throughout the story and can be selectively referenced in this section:\n{entity_description}"
+            user_message += f"Visual elements that appear throughout the story and can be selectively referenced in this section:\n{entity_description}\n\n"
 
-        user_message += f"\n\nCreate an image generation prompt based on the following excerpt of the story:\n'{story_part}'."
+        user_message += f'Create an image generation prompt based on the following excerpt of the story:\n"""\n{story_part}\n"""'
 
         return Prompt(system_message=system_message, user_message=user_message)
 
