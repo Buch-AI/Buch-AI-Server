@@ -38,6 +38,7 @@ class VertexAiRouterService(LlmRouterService):
     def __init__(self):
         vertexai.init(project="bai-buchai-p", location="us-east1")
 
+    @LlmRouterService.validation_with_retries(lambda x: True)
     async def generate_story_string(
         self, request: GenerateStoryRequest
     ) -> TextResponse:
@@ -172,6 +173,7 @@ class VertexAiRouterService(LlmRouterService):
             )
             raise HTTPException(status_code=500, detail=str(e))
 
+    @LlmRouterService.validation_with_retries(lambda x: True)
     async def split_story(self, request: GenerateStoryRequest) -> SplitStoryResponse:
         try:
             text_generation_model_config = (
@@ -250,6 +252,7 @@ class VertexAiRouterService(LlmRouterService):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             )
 
+    @LlmRouterService.validation_with_retries(lambda x: True)
     async def summarise_story(self, request: SummariseStoryRequest) -> TextResponse:
         try:
             text_generation_model_config = (
@@ -312,6 +315,7 @@ class VertexAiRouterService(LlmRouterService):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             )
 
+    @LlmRouterService.validation_with_retries(lambda x: True)
     async def generate_image_prompts(
         self, request: GenerateImagePromptsRequest
     ) -> ImagePromptsResponse:

@@ -2,8 +2,9 @@ import inspect
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
-from typing import AsyncGenerator, List, Optional
+from typing import AsyncGenerator, Awaitable, Callable, List, Optional, TypeVar
 
 from google.cloud import storage
 from pydantic import BaseModel
@@ -14,6 +15,9 @@ from config import ENV, GCLOUD_STB_CREATIONS_NAME, PROJECT_ROOT
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Type variable for the return type of decorated functions
+T = TypeVar("T")
 
 
 class GenerateStoryRequest(BaseModel):
@@ -155,6 +159,68 @@ class LlmLogger:
 
 class LlmRouterService(ABC):
     """Abstract base class for LLM router services."""
+
+    @staticmethod
+    def validation_with_retries(
+        validation_func: Callable[[T], bool], max_retries: int = 3
+    ) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
+        """
+        Decorator that retries an async function if it throws an exception or validation fails.
+
+        Args:
+            validation_func: Function that takes the result and returns True if valid
+            max_retries: Maximum number of retry attempts (default: 3)
+
+        Returns:
+            Decorated async function that will retry on failure or invalid results
+        """
+
+        def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+            @wraps(func)
+            async def wrapper(*args, **kwargs) -> T:
+                last_exception = None
+
+                for attempt in range(max_retries + 1):  # +1 for initial attempt
+                    try:
+                        result: T = await func(*args, **kwargs)
+
+                        # Check validation
+                        if validation_func(result):
+                            if attempt > 0:
+                                logger.warning(
+                                    f"Function {func.__name__} succeeded on attempt {attempt + 1}"
+                                )
+                            return result
+                        else:
+                            logger.warning(
+                                f"Validation failed for {func.__name__}, attempt {attempt + 1}/{max_retries + 1}"
+                            )
+                            if attempt == max_retries:
+                                raise ValueError(
+                                    f"Validation failed for {func.__name__} after {max_retries + 1} attempts"
+                                )
+
+                    except Exception as e:
+                        last_exception = e
+                        logger.warning(
+                            f"Exception in {func.__name__}, attempt {attempt + 1}/{max_retries + 1}: {str(e)}"
+                        )
+                        if attempt == max_retries:
+                            logger.error(
+                                f"Function {func.__name__} failed after {max_retries + 1} attempts"
+                            )
+                            raise last_exception
+
+                # This shouldn't be reached, but just in case
+                if last_exception:
+                    raise last_exception
+                raise ValueError(
+                    f"Function {func.__name__} failed after {max_retries + 1} attempts"
+                )
+
+            return wrapper
+
+        return decorator
 
     @abstractmethod
     async def generate_story_string(
