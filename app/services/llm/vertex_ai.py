@@ -443,7 +443,9 @@ class VertexAiRouterService(LlmRouterService):
                 total_completion_tokens += completion_tokens
                 total_cost += part_cost
 
-                image_prompts.append(part_response.text)
+                image_prompt = part_response.text
+                image_prompts.append(image_prompt)
+                LlmLogger.log_prompt(request.cost_centre_id, image_prompt)
 
             # Update cost centre if provided
             if request.cost_centre_id:

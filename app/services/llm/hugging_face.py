@@ -368,7 +368,9 @@ class HuggingFaceRouterService(LlmRouterService):
                 total_completion_tokens += usage.completion_tokens
                 total_cost += part_cost
 
-                image_prompts.append(part_response.choices[0].message.content)
+                image_prompt = part_response.choices[0].message.content
+                image_prompts.append(image_prompt)
+                LlmLogger.log_prompt(request.cost_centre_id, image_prompt)
 
             # Update cost centre if provided
             if request.cost_centre_id:

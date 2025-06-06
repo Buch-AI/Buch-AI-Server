@@ -62,64 +62,98 @@ class ConfigManager(ABC):
         """Get the configuration for a specific model type."""
         raise NotImplementedError()
 
-    @staticmethod
-    def get_prompt_story_generate(model_type: ModelType, user_prompt: str) -> Prompt:
+    @classmethod
+    def get_prompt_story_generate(
+        cls, model_type: ModelType, user_prompt: str
+    ) -> Prompt:
         """Get the formatted prompt for story generation."""
-        return Prompt(
-            system_message="You are a creative story writer.",
-            user_message=f'Write a story based on this prompt:\n"""\n{user_prompt}\n"""',
+        word_limit = int(
+            cls.get_text_generation_model_config(model_type).max_tokens * 0.75
         )
 
-    @staticmethod
-    def get_prompt_story_split(model_type: ModelType, user_prompt: str) -> Prompt:
+        return Prompt(
+            system_message=(
+                "You are a skilled creative writer specializing in engaging storytelling. "
+                "Create compelling narratives with well-developed characters, vivid settings, and clear story arcs. "
+                "Focus on showing rather than telling, use descriptive language, and maintain consistent tone throughout."
+            ),
+            user_message=(
+                f"Write a complete story based on this prompt. "
+                f"The story should be {word_limit} words or less. "
+                f"Include character development, setting details, dialogue where appropriate, and a satisfying resolution:\n"
+                f'"""\n{user_prompt}\n"""'
+            ),
+        )
+
+    @classmethod
+    def get_prompt_story_split(cls, model_type: ModelType, user_prompt: str) -> Prompt:
         """Get the formatted prompt for story splitting."""
         _user_prompt = user_prompt.replace("\n", " ")
         return Prompt(
             system_message=(
-                "You are a story analyzer. "
-                "Your job is to re-format and split story text into a pre-defined number of parts and sub-parts, inserting a [PART] tag between each part and a [SUBPART] tag between each sub-part. "
-                "Remove empty lines if the text belongs to the same part. "
-                "Do not include any other text in your response. "
-                "Do not include section titles."
+                "You are a story structure analyzer. "
+                "Your task is to reorganize story text into exactly 4 main parts with 3 sub-parts each. "
+                "Use [PART] tags to separate main parts and [SUBPART] tags to separate sub-parts within each part. "
+                "Ensure each section has meaningful content and natural narrative flow. "
+                "Remove excessive line breaks but preserve paragraph structure. "
+                "Output ONLY the formatted story text with tags - no explanations or section titles."
             ),
-            user_message=f'Split the following story into 4 parts and 3 sub-parts per part:\n"""\n{_user_prompt}\n"""',
+            user_message=(
+                f"Restructure the following story into 4 parts with 3 sub-parts each, "
+                f"ensuring balanced content distribution and logical narrative breaks:\n"
+                f'"""\n{_user_prompt}\n"""'
+            ),
         )
 
-    @staticmethod
-    def get_prompt_story_summarise(model_type: ModelType, story: str) -> Prompt:
+    @classmethod
+    def get_prompt_story_summarise(cls, model_type: ModelType, story: str) -> Prompt:
         """Get the formatted prompt for story summarisation."""
         return Prompt(
             system_message=(
-                "You are an expert at summarizing stories and text. "
-                "Create a concise summary that captures the key elements, main plot points, and core themes of the provided text within 3 sentences."
+                "You are an expert literary analyst specializing in concise story summarization. "
+                "Create summaries that capture the essential plot, main characters, central conflict, and resolution. "
+                "Focus on the most important narrative elements while maintaining the story's tone and impact. "
+                "Write exactly 3 sentences that flow naturally together."
             ),
-            user_message=f'Summarize the following story:\n"""\n{story}\n"""',
+            user_message=(
+                f"Provide a 3-sentence summary of this story that captures its main plot points, "
+                f"key characters, and central themes:\n"
+                f'"""\n{story}\n"""'
+            ),
         )
 
-    @staticmethod
-    def get_prompt_story_entities(model_type: ModelType, story: str) -> Prompt:
+    @classmethod
+    def get_prompt_story_entities(cls, model_type: ModelType, story: str) -> Prompt:
         """Get the formatted prompt for listing out story entities."""
         return Prompt(
-            system_message="You are an assistant helping convert story chapters into image prompts.",
+            system_message=(
+                "You are a visual content specialist who extracts key visual elements from stories for illustration purposes. "
+                "Focus on characters and locations that are central to the story and would be important for visual consistency across illustrations. "
+                "Provide detailed descriptions suitable for image generation, including physical appearance, clothing, architectural details, and atmospheric elements."
+            ),
             user_message=(
-                "Extract the key visual elements that should appear in a scene illustration for the following story in the following JSON format:\n"
+                "Extract the key visual entities from the following story that should appear in scene illustrations. "
+                "Return a JSON array where each entity follows this exact format:\n"
                 '"""\n'
                 "{\n"
-                '    "type": (One of the following options: "character", "location"),\n'
-                '    "name": (The name of the entity),\n'
-                '    "description": (The visual description of the entity that will be used in the image prompt),\n'
+                '    "type": "character", "object", "location", "background" or "other",\n'
+                '    "name": "Entity name",\n'
+                '    "description": "Detailed visual description for image generation"\n'
                 "}\n"
                 '"""\n'
                 "\n"
-                "Refer to the following story:\n"
+                "Only include entities that are visually significant and mentioned multiple times or are central to key scenes. "
+                "Make descriptions specific enough for consistent visual representation across multiple images.\n\n"
+                "Story to analyze:\n"
                 '"""\n'
                 f"{story}\n"
                 '"""\n'
             ),
         )
 
-    @staticmethod
+    @classmethod
     def get_prompt_image_generate(
+        cls,
         model_type: ModelType,
         story: str,
         story_part: str,
@@ -134,17 +168,27 @@ class ConfigManager(ABC):
             entity_description: Optional context about entities (characters, locations) to maintain consistency.
         """
         system_message = (
-            "You are an expert at creating image generation prompts. "
-            "Given a story or text passage, create a descriptive prompt that captures the essence of the text for an image generation AI. "
-            "Be specific, detailed, and concise. Keep the prompt within 3 sentences. "
-            "Do not include visual elements that are not present in this section of the story."
+            "You are an expert at crafting detailed image generation prompts for AI art systems. "
+            "Create vivid, specific prompts that capture the mood, setting, characters, and action of story scenes. "
+            "Include artistic style guidance, lighting, composition, and atmosphere details. "
+            "Focus on visual elements that enhance storytelling and emotional impact. "
+            "Keep prompts concise but richly descriptive, within 2-3 sentences."
         )
 
         user_message = ""
         if entity_description:
-            user_message += f"Visual elements that appear throughout the story and can be selectively referenced in this section:\n{entity_description}\n\n"
+            user_message += (
+                f"Visual reference for consistent character/location representation:\n"
+                f"{entity_description}\n\n"
+                f"Use these references selectively - only include elements that appear in this specific scene.\n\n"
+            )
 
-        user_message += f'Create an image generation prompt based on the following excerpt of the story:\n"""\n{story_part}\n"""'
+        user_message += (
+            f"Create a detailed image generation prompt for this story excerpt. "
+            f"Focus on the specific scene, mood, and visual elements present in this section. "
+            f"Include artistic style, lighting, and composition suggestions:\n"
+            f'"""\n{story_part}\n"""'
+        )
 
         return Prompt(system_message=system_message, user_message=user_message)
 
