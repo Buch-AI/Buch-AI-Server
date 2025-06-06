@@ -57,8 +57,8 @@ class GoogleCloudDubber(Dubber):
 
     def __init__(
         self,
-        language_code: str = "en-US",
-        voice_name: str = "en-US-Standard-C",  # https://cloud.google.com/text-to-speech/docs/list-voices-and-types#standard_voices
+        language_code: str = "en-GB",
+        voice_name: str = "en-GB-Standard-C",  # https://cloud.google.com/text-to-speech/docs/list-voices-and-types#standard_voices
         speaking_rate: float = 1.0,
         pitch: float = 0.0,
         cost_centre_id: Optional[str] = None,

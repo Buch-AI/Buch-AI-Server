@@ -692,8 +692,8 @@ class VideoGenerator:
         if ENABLE_DUBBING:
             logger.info("Initializing Google Cloud Dubber")
             dubber = GoogleCloudDubber(
-                language_code="en-US",
-                voice_name="en-US-Neural2-J",
+                language_code="en-GB",
+                voice_name="en-GB-Standard-C",
                 speaking_rate=1.0,
                 pitch=0.0,
                 cost_centre_id=cost_centre_id,
