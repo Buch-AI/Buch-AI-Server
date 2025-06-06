@@ -29,3 +29,6 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(PROJECT_ROOT, "app", "assets")
 ASSETS_D_DIR = os.path.join(ASSETS_DIR, "d")
 ASSETS_P_DIR = os.path.join(ASSETS_DIR, "p")
+
+# Output directory for development environment
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")

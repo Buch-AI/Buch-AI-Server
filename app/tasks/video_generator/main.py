@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import tempfile
+import textwrap
 import uuid
 from functools import lru_cache, partial
 from io import BytesIO
@@ -29,12 +30,12 @@ from moviepy import (
 )
 from moviepy.video.fx.FadeIn import FadeIn
 from moviepy.video.fx.FadeOut import FadeOut
-from PIL import Image
+from PIL import Image, ImageFont
 
 from app.tasks.video_generator.dubber import GoogleCloudDubber
 from app.tasks.video_generator.imagemagick import initialize_imagemagick
 from app.tasks.video_generator.video_slide import VideoSlide
-from config import ASSETS_P_DIR, ENV, GCLOUD_STB_CREATIONS_NAME
+from config import ASSETS_P_DIR, ENV, GCLOUD_STB_CREATIONS_NAME, OUTPUT_DIR
 
 # Configure logging
 logging.basicConfig(
@@ -48,10 +49,6 @@ initialize_imagemagick()
 
 class VideoGenerator:
     """Handles video generation from images and text using MoviePy."""
-
-    # TODO: Remove this later on.
-    # Define audio path using the centrally configured assets directory
-    SAMPLE_AUDIO_PATH = os.path.join(ASSETS_P_DIR, "sample-audio.mp3")
 
     # NOTE: Google Cloud Storage connectivity
 
@@ -520,6 +517,103 @@ class VideoGenerator:
         )
 
     @staticmethod
+    def _calculate_chars_per_line(
+        font_path: str, font_size: int, max_width: int
+    ) -> int:
+        """
+        Calculate the number of characters that can fit on a line based on actual font metrics.
+
+        Args:
+            font_path: Path to the font file
+            font_size: Font size in pixels
+            max_width: Maximum width available for text
+
+        Returns:
+            int: Number of characters that can fit on a line
+        """
+        # Load the font
+        font = ImageFont.truetype(font_path, font_size)
+
+        # Sample text to measure average character width
+        # Using a mix of common characters including narrow (i, l) and wide (m, w) characters
+        sample_text = (
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!?"
+        )
+
+        # Get the bounding box of the sample text
+        bbox = font.getbbox(sample_text)
+        text_width = bbox[2] - bbox[0]  # width = right - left
+
+        # Calculate average character width
+        avg_char_width = text_width / len(sample_text)
+
+        # Calculate characters per line with a small safety margin (0.95 factor)
+        chars_per_line = int(max_width / avg_char_width)
+
+        # Ensure minimum characters per line
+        return chars_per_line
+
+    @staticmethod
+    def _create_wrapped_text_clip(
+        text: str,
+        font_size: int,
+        color: str,
+        font_path: str,
+        max_width: int,
+        line_spacing: float = 1.2,
+    ) -> TextClip:
+        """
+        Create a text clip with proper word wrapping and no word breaking.
+
+        Args:
+            text: Text content
+            font_size: Font size
+            color: Text color
+            font_path: Path to font file
+            max_width: Maximum width for text (accounts for padding)
+            line_spacing: Line spacing multiplier
+
+        Returns:
+            TextClip: Text clip with proper word wrapping
+        """
+
+        if ENV == "d":
+            # Clear the old cached function to ensure fresh rendering
+            VideoGenerator._create_text_clip.cache_clear()
+
+        # Use accurate font-based calculation instead of rough approximation
+        chars_per_line = VideoGenerator._calculate_chars_per_line(
+            font_path, font_size, max_width
+        )
+
+        # Wrap text without breaking words
+        wrapped_lines = textwrap.fill(
+            text,
+            width=chars_per_line,
+            break_long_words=False,  # Don't break long words
+            break_on_hyphens=False,  # Don't break on hyphens
+        ).split("\n")
+
+        # Join lines back with proper spacing and add extra newline for bottom padding
+        wrapped_text = (
+            "\n".join(wrapped_lines) + "\n"
+        )  # Add newline at the end for bottom spacing
+
+        # Create the text clip with proper word wrapping - size required for caption method
+        text_clip = TextClip(
+            text=wrapped_text,
+            font_size=font_size,
+            color=color,
+            method="caption",
+            font=font_path,
+            size=(max_width, None),  # Size required for caption method
+            text_align="center",
+            interline=int(font_size * (line_spacing - 1)),  # Line spacing
+        )
+
+        return text_clip
+
+    @staticmethod
     async def _create_text_clips(
         captions: List[str], font_size: int, font_color: str, font_name: str, width: int
     ) -> List[TextClip]:
@@ -592,7 +686,7 @@ class VideoGenerator:
         AUDIO_CODEC = "aac"
 
         # Fade effect constants
-        FADE_DURATION = 0.3
+        FADE_DURATION = 0.4
 
         # Zoom effect constants
         ENABLE_ZOOM = False  # Whether to enable the zoom-in effect on images
@@ -606,13 +700,11 @@ class VideoGenerator:
         # Caption constants
         FONT_SIZE = 20
         FONT_COLOR = "white"
-        FONT_NAME = str(
-            os.path.join(ASSETS_P_DIR, "Fredoka-VariableFont_wdth,wght.ttf")
-        )
-        CAPTION_PADDING = 20  # Padding from the bottom and sides of the frame
+        FONT_NAME = str(os.path.join(ASSETS_P_DIR, "Helvetica-Bold.ttf"))
+        CAPTION_PADDING = 5  # Horizontal padding from left and right edges (controls text width and margins)
 
         # Performance constants
-        SLIDE_BATCH_SIZE = 3  # Process slides in batches to manage memory
+        SLIDE_BATCH_SIZE = 4  # Process slides in batches to manage memory
 
         if not slides:
             raise ValueError("No slides provided")
@@ -802,23 +894,35 @@ class VideoGenerator:
                         )
                         audio_clip = None
 
-                    text_clip = VideoGenerator._create_text_clip(
-                        text=caption,
+                    text_clip = VideoGenerator._create_wrapped_text_clip(
+                        text=caption.replace("\n", " ").strip(),
                         font_size=FONT_SIZE,
                         color=FONT_COLOR,
                         font_path=FONT_NAME,
-                        width=VIDEO_WIDTH - 2 * CAPTION_PADDING,
-                        method="caption",
+                        max_width=VIDEO_WIDTH
+                        - 2
+                        * CAPTION_PADDING,  # Account for both left and right padding
                     )
 
-                    # Get text clip size and calculate positions
-                    text_height = text_clip.size[1]
-                    text_y_pos = (
-                        VIDEO_HEIGHT - text_height - CAPTION_PADDING
-                    )  # Add bottom padding
-                    gradient_height = int(
-                        text_height * 2
-                    )  # Make gradient taller for more fade
+                    # Get text clip dimensions
+                    text_width, text_height = text_clip.size
+
+                    # Simplified positioning since we added newline for bottom spacing
+                    text_y_pos = max(
+                        VIDEO_HEIGHT
+                        - text_height
+                        - CAPTION_PADDING,  # Simple bottom padding
+                        CAPTION_PADDING,  # Ensure text doesn't go above top padding either
+                    )
+
+                    # Calculate gradient height to cover the text area
+                    gradient_height = min(
+                        VIDEO_HEIGHT
+                        - text_y_pos
+                        + 10,  # From text position to bottom + small buffer
+                        VIDEO_HEIGHT
+                        // 2,  # Don't let gradient take more than half the screen
+                    )
 
                     # Create gradient background
                     gradient = VideoGenerator._get_gradient_background(
@@ -831,25 +935,31 @@ class VideoGenerator:
                     # Create gradient clip
                     gradient_clip = ImageClip(gradient)
 
-                    # Create shadow text clip
-                    shadow_clip = VideoGenerator._create_text_clip(
-                        text=caption,
+                    # Create shadow text clip with same wrapping
+                    shadow_clip = VideoGenerator._create_wrapped_text_clip(
+                        text=caption.replace("\n", " ").strip(),
                         font_size=FONT_SIZE,
                         color="black",
                         font_path=FONT_NAME,
-                        width=VIDEO_WIDTH - 2 * CAPTION_PADDING,
-                        method="caption",
+                        max_width=VIDEO_WIDTH
+                        - 2
+                        * CAPTION_PADDING,  # Account for both left and right padding
                     )
 
-                    # Position clips
-                    gradient_y_pos = VIDEO_HEIGHT - gradient_height
+                    # Position clips with explicit coordinates and proper padding
+                    gradient_y_pos = max(
+                        text_y_pos - 10, 0
+                    )  # Start gradient slightly above text, but not above frame
                     gradient_clip = gradient_clip.with_position(
-                        ("center", gradient_y_pos)
-                    )
+                        (0, gradient_y_pos)
+                    )  # Full width, positioned from left
+
+                    # Use explicit positioning with proper padding
+                    text_x_pos = CAPTION_PADDING  # Explicit left padding
                     shadow_clip = shadow_clip.with_position(
-                        ("center", text_y_pos + 2)
+                        (text_x_pos, text_y_pos + 2)
                     ).with_opacity(0.8)
-                    text_clip = text_clip.with_position(("center", text_y_pos))
+                    text_clip = text_clip.with_position((text_x_pos, text_y_pos))
 
                     # Set timing for all clips using calculated duration
                     gradient_clip = gradient_clip.with_duration(duration)
@@ -1045,8 +1155,9 @@ if __name__ == "__main__":
             )
 
             if ENV == "d":
-                # Save video locally in current directory
-                local_video_path = f"video_{creation_id}.mp4"
+                # Save video locally in output directory
+                os.makedirs(OUTPUT_DIR, exist_ok=True)
+                local_video_path = os.path.join(OUTPUT_DIR, f"video_{creation_id}.mp4")
                 with open(local_video_path, "wb") as f:
                     f.write(video_bytes)
                 logger.info(f"Video saved locally at: {local_video_path}")
