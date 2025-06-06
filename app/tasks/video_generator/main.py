@@ -484,39 +484,6 @@ class VideoGenerator:
         return max(base_duration + 1.5, 2.0)  # Ensure at least 2 seconds per caption
 
     @staticmethod
-    @lru_cache(maxsize=128)
-    def _create_text_clip(
-        text: str,
-        font_size: int,
-        color: str,
-        font_path: str,
-        width: int,
-        method: str = "caption",
-    ) -> TextClip:
-        """
-        Create and cache text clips to avoid recreating identical clips.
-
-        Args:
-            text: Text content
-            font_size: Font size
-            color: Text color
-            font_path: Path to font file
-            width: Text clip width
-            method: Text rendering method
-
-        Returns:
-            TextClip: Cached text clip
-        """
-        return TextClip(
-            text=text,
-            font_size=font_size,
-            color=color,
-            method=method,
-            size=(width, None),
-            font=font_path,
-        )
-
-    @staticmethod
     def _calculate_chars_per_line(
         font_path: str, font_size: int, max_width: int
     ) -> int:
@@ -554,6 +521,7 @@ class VideoGenerator:
         return chars_per_line
 
     @staticmethod
+    @lru_cache(maxsize=256)  # Increased cache size for wrapped text clips
     def _create_wrapped_text_clip(
         text: str,
         font_size: int,
@@ -564,6 +532,7 @@ class VideoGenerator:
     ) -> TextClip:
         """
         Create a text clip with proper word wrapping and no word breaking.
+        Now cached to avoid recreating identical clips.
 
         Args:
             text: Text content
@@ -579,7 +548,7 @@ class VideoGenerator:
 
         if ENV == "d":
             # Clear the old cached function to ensure fresh rendering
-            VideoGenerator._create_text_clip.cache_clear()
+            VideoGenerator._create_wrapped_text_clip.cache_clear()
 
         # Use accurate font-based calculation instead of rough approximation
         chars_per_line = VideoGenerator._calculate_chars_per_line(
@@ -614,39 +583,49 @@ class VideoGenerator:
         return text_clip
 
     @staticmethod
-    async def _create_text_clips(
-        captions: List[str], font_size: int, font_color: str, font_name: str, width: int
+    async def _create_wrapped_text_clips_batch(
+        texts_and_colors: List[tuple[str, str]],
+        font_size: int,
+        font_path: str,
+        max_width: int,
+        line_spacing: float = 1.2,
     ) -> List[TextClip]:
         """
-        Create text clips in parallel for better performance.
+        Create multiple wrapped text clips in parallel for better performance.
+        Uses the cached _create_wrapped_text_clip function internally.
 
         Args:
-            captions: List of caption texts
+            texts_and_colors: List of (text, color) tuples
             font_size: Font size for text
-            font_color: Color of text
-            font_name: Path to font file
-            width: Width of text clips
+            font_path: Path to font file
+            max_width: Maximum width for text clips
+            line_spacing: Line spacing multiplier
 
         Returns:
-            List[TextClip]: List of created text clips
+            List[TextClip]: List of created wrapped text clips
         """
         loop = asyncio.get_event_loop()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             # Create partial function for text clip creation
-            create_clip_func = partial(
-                VideoGenerator._create_text_clip,
+            create_wrapped_clip_func = partial(
+                VideoGenerator._create_wrapped_text_clip,
                 font_size=font_size,
-                color=font_color,
-                font_path=font_name,
-                width=width,
-                method="caption",
+                font_path=font_path,
+                max_width=max_width,
+                line_spacing=line_spacing,
             )
 
             # Submit all text clip creation tasks
             tasks = [
-                loop.run_in_executor(executor, create_clip_func, caption)
-                for caption in captions
+                loop.run_in_executor(
+                    executor,
+                    lambda text_color: create_wrapped_clip_func(
+                        text=text_color[0], color=text_color[1]
+                    ),
+                    text_color,
+                )
+                for text_color in texts_and_colors
             ]
 
             # Wait for all tasks to complete
@@ -820,7 +799,8 @@ class VideoGenerator:
                     f"Processing {len(slide.captions)} captions for slide {global_slide_idx}..."
                 )
 
-                # Process captions differently based on whether dubbing is enabled
+                # Collect all caption data for batch processing
+                caption_data = []
                 if ENABLE_DUBBING:
                     caption_audio_pairs = zip(slide.captions, slide.caption_dubs)
                 else:
@@ -828,6 +808,7 @@ class VideoGenerator:
                         (caption, None) for caption in slide.captions
                     ]
 
+                # First pass: collect caption data and process audio
                 for idx, (caption, audio_bytes) in enumerate(caption_audio_pairs):
                     logger.info(
                         f"Processing caption {idx + 1}/{len(slide.captions)}: ENABLE_DUBBING={ENABLE_DUBBING}, has_audio_bytes={audio_bytes is not None}, audio_bytes_size={len(audio_bytes) if audio_bytes else 0}..."
@@ -894,20 +875,60 @@ class VideoGenerator:
                         )
                         audio_clip = None
 
-                    text_clip = VideoGenerator._create_wrapped_text_clip(
-                        text=caption.replace("\n", " ").strip(),
-                        font_size=FONT_SIZE,
-                        color=FONT_COLOR,
-                        font_path=FONT_NAME,
-                        max_width=VIDEO_WIDTH
-                        - 2
-                        * CAPTION_PADDING,  # Account for both left and right padding
+                    # Store caption data for batch processing
+                    cleaned_caption = caption.replace("\n", " ").strip()
+                    caption_data.append(
+                        {
+                            "text": cleaned_caption,
+                            "duration": duration,
+                            "audio_clip": audio_clip,
+                            "index": idx,
+                        }
                     )
 
-                    # Get text clip dimensions
+                # Batch create text clips for this slide
+                if caption_data:
+                    logger.info(
+                        f"Creating {len(caption_data) * 2} text clips in batch for slide {global_slide_idx}..."
+                    )
+
+                    # Prepare text-color pairs for batch creation (main text + shadow for each caption)
+                    texts_and_colors = []
+                    for data in caption_data:
+                        texts_and_colors.extend(
+                            [
+                                (data["text"], FONT_COLOR),  # Main text
+                                (data["text"], "black"),  # Shadow text
+                            ]
+                        )
+
+                    # Create all text clips in batch
+                    batch_text_clips = (
+                        await VideoGenerator._create_wrapped_text_clips_batch(
+                            texts_and_colors=texts_and_colors,
+                            font_size=FONT_SIZE,
+                            font_path=FONT_NAME,
+                            max_width=VIDEO_WIDTH - 2 * CAPTION_PADDING,
+                        )
+                    )
+
+                    logger.info(
+                        f"Successfully created {len(batch_text_clips)} text clips in batch"
+                    )
+
+                # Second pass: apply positioning, timing, and effects
+                for idx, data in enumerate(caption_data):
+                    duration = data["duration"]
+                    audio_clip = data["audio_clip"]
+
+                    # Get the corresponding text clips from batch (main and shadow)
+                    text_clip = batch_text_clips[idx * 2]  # Main text
+                    shadow_clip = batch_text_clips[idx * 2 + 1]  # Shadow text
+
+                    # Get text clip dimensions for positioning
                     text_width, text_height = text_clip.size
 
-                    # Simplified positioning since we added newline for bottom spacing
+                    # Calculate positioning
                     text_y_pos = max(
                         VIDEO_HEIGHT
                         - text_height
@@ -934,17 +955,6 @@ class VideoGenerator:
 
                     # Create gradient clip
                     gradient_clip = ImageClip(gradient)
-
-                    # Create shadow text clip with same wrapping
-                    shadow_clip = VideoGenerator._create_wrapped_text_clip(
-                        text=caption.replace("\n", " ").strip(),
-                        font_size=FONT_SIZE,
-                        color="black",
-                        font_path=FONT_NAME,
-                        max_width=VIDEO_WIDTH
-                        - 2
-                        * CAPTION_PADDING,  # Account for both left and right padding
-                    )
 
                     # Position clips with explicit coordinates and proper padding
                     gradient_y_pos = max(
@@ -990,11 +1000,11 @@ class VideoGenerator:
                         audio_clip = audio_clip.with_start(current_time)
                         audio_clips.append(audio_clip)
                         logger.info(
-                            f"Added audio clip to list for caption {idx + 1}, total audio_clips: {len(audio_clips)}"
+                            f"Added audio clip to list for caption {data['index'] + 1}, total audio_clips: {len(audio_clips)}"
                         )
                     else:
                         logger.info(
-                            f"No audio clip added for caption {idx + 1}: ENABLE_DUBBING={ENABLE_DUBBING}, audio_clip is None={audio_clip is None}"
+                            f"No audio clip added for caption {data['index'] + 1}: ENABLE_DUBBING={ENABLE_DUBBING}, audio_clip is None={audio_clip is None}"
                         )
 
                     current_time += duration
