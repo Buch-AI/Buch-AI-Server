@@ -18,13 +18,13 @@ class VertexAiConfigManager(ConfigManager):
     text_generation_model_configs: Dict[ModelType, TextGenerationModelConfig] = {
         ModelType.LITE: TextGenerationModelConfig(
             model_id="gemini-2.0-flash-lite",
-            max_tokens=1024,
+            max_tokens=512,
             temperature=0.6,
             top_p=0.9,
         ),
         ModelType.STANDARD: TextGenerationModelConfig(
             model_id="gemini-2.0-flash",
-            max_tokens=1024,
+            max_tokens=512,
             temperature=0.6,
             top_p=0.9,
         ),

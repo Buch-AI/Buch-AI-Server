@@ -169,26 +169,29 @@ class ConfigManager(ABC):
         """
         system_message = (
             "You are an expert at crafting detailed image generation prompts for AI art systems. "
+            "You specialise in creating prompts for the marker illustration art style. "
             "Create vivid, specific prompts that capture the mood, setting, characters, and action of story scenes. "
+            "You must mention the art style in the prompt. "
             "Include artistic style guidance, lighting, composition, and atmosphere details. "
-            "Focus on visual elements that enhance storytelling and emotional impact. "
-            "Keep prompts concise but richly descriptive, within 2-3 sentences."
+            "Focus on the characters' actions and emotions if present in the scene. "
+            "Keep prompts concise but richly descriptive, within 3 sentences."
         )
 
         user_message = ""
-        if entity_description:
-            user_message += (
-                f"Visual reference for consistent character/location representation:\n"
-                f"{entity_description}\n\n"
-                f"Use these references selectively - only include elements that appear in this specific scene.\n\n"
-            )
 
         user_message += (
-            f"Create a detailed image generation prompt for this story excerpt. "
-            f"Focus on the specific scene, mood, and visual elements present in this section. "
-            f"Include artistic style, lighting, and composition suggestions:\n"
+            f"Create a detailed image generation prompt for this story excerpt in marker illustration art style:\n"
             f'"""\n{story_part}\n"""'
         )
+
+        if entity_description:
+            user_message += (
+                f"\n\n"
+                f"Visual reference for consistent character/location representation:\n"
+                f'"""\n{entity_description}\n"""'
+                f"Use these references selectively - only include elements that appear in this specific scene. "
+                f"Be specific about what each element is. Do not assume the reader knows what you are talking about."
+            )
 
         return Prompt(system_message=system_message, user_message=user_message)
 

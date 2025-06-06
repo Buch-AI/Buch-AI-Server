@@ -18,19 +18,19 @@ class HuggingFaceConfigManager(ConfigManager):
     text_generation_model_configs: Dict[ModelType, TextGenerationModelConfig] = {
         ModelType.LITE: TextGenerationModelConfig(
             model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-            max_tokens=1024,
+            max_tokens=512,
             temperature=0.6,
             top_p=0.9,
         ),
         ModelType.STANDARD: TextGenerationModelConfig(
             model_id="mistralai/Mistral-7B-Instruct-v0.2",
-            max_tokens=1024,
+            max_tokens=512,
             temperature=0.6,
             top_p=0.9,
         ),
         ModelType.PRO: TextGenerationModelConfig(
             model_id="google/gemma-3-27b-it",
-            max_tokens=2048,
+            max_tokens=1024,
             temperature=0.6,
             top_p=0.9,
         ),
