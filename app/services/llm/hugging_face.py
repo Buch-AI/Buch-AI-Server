@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 from huggingface_hub import AsyncInferenceClient, InferenceClient
 
 from app.models.cost_centre import CostCentreManager
-from app.models.llm import HuggingFaceConfigManager, ModelType, Prompt
+from app.models.llm import HuggingFaceConfigManager, ModelType, Prompt, Validator
 from app.services.llm.common import (
     CostUsage,
     GenerateImagePromptsRequest,
@@ -160,7 +160,9 @@ class HuggingFaceRouterService(LlmRouterService):
             )
             raise HTTPException(status_code=500, detail=str(e))
 
-    @LlmRouterService.validation_with_retries(lambda x: True)
+    @LlmRouterService.validation_with_retries(
+        lambda x: Validator.validate_story_split(x.data)
+    )
     async def split_story(self, request: GenerateStoryRequest) -> SplitStoryResponse:
         try:
             text_generation_model_config = (

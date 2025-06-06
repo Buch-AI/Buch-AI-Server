@@ -11,7 +11,7 @@ from vertexai.generative_models import Content, GenerationConfig, GenerativeMode
 from vertexai.language_models import TextEmbeddingModel
 
 from app.models.cost_centre import CostCentreManager
-from app.models.llm import ModelType, VertexAiConfigManager
+from app.models.llm import ModelType, Prompt, Validator, VertexAiConfigManager
 from app.services.llm.common import (
     CostUsage,
     GenerateImagePromptsRequest,
@@ -38,6 +38,23 @@ class VertexAiRouterService(LlmRouterService):
     def __init__(self):
         vertexai.init(project="bai-buchai-p", location="us-east1")
 
+    def _create_model_with_system_message(
+        self, model_id: str, prompt: Prompt
+    ) -> GenerativeModel:
+        """Create a GenerativeModel instance with system message.
+
+        Args:
+            model_id: The model ID to use
+            prompt: The Prompt object containing system and user messages
+
+        Returns:
+            GenerativeModel instance with system message set
+        """
+        # Create system instruction content
+        system_instruction = Content(parts=[Part.from_text(prompt.system_message)])
+
+        return GenerativeModel(model_id, system_instruction=system_instruction)
+
     @LlmRouterService.validation_with_retries(lambda x: True)
     async def generate_story_string(
         self, request: GenerateStoryRequest
@@ -48,24 +65,27 @@ class VertexAiRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            prompt = str(
-                VertexAiConfigManager.get_prompt_story_generate(
-                    request.model_type, request.prompt
-                )
+            prompt = VertexAiConfigManager.get_prompt_story_generate(
+                request.model_type, request.prompt
             )
-            LlmLogger.log_prompt(request.cost_centre_id, prompt)
+            LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
-            model = GenerativeModel(text_generation_model_config.model_id)
+            model = self._create_model_with_system_message(
+                text_generation_model_config.model_id, prompt
+            )
             generation_config = GenerationConfig(
                 max_output_tokens=text_generation_model_config.max_tokens,
                 temperature=text_generation_model_config.temperature,
                 top_p=text_generation_model_config.top_p,
             )
 
-            prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
+            # Create user content
+            user_content = Content(
+                role="user", parts=[Part.from_text(prompt.user_message)]
+            )
 
             response = model.generate_content(
-                prompt_content,
+                user_content,
                 generation_config=generation_config,
             )
 
@@ -112,24 +132,27 @@ class VertexAiRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            prompt = str(
-                VertexAiConfigManager.get_prompt_story_generate(
-                    request.model_type, request.prompt
-                )
+            prompt = VertexAiConfigManager.get_prompt_story_generate(
+                request.model_type, request.prompt
             )
-            LlmLogger.log_prompt(request.cost_centre_id, prompt)
+            LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
-            model = GenerativeModel(text_generation_model_config.model_id)
+            model = self._create_model_with_system_message(
+                text_generation_model_config.model_id, prompt
+            )
             generation_config = GenerationConfig(
                 max_output_tokens=text_generation_model_config.max_tokens,
                 temperature=text_generation_model_config.temperature,
                 top_p=text_generation_model_config.top_p,
             )
 
-            prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
+            # Create user content
+            user_content = Content(
+                role="user", parts=[Part.from_text(prompt.user_message)]
+            )
 
             response = model.generate_content(
-                prompt_content,
+                user_content,
                 generation_config=generation_config,
                 stream=True,
             )
@@ -156,7 +179,7 @@ class VertexAiRouterService(LlmRouterService):
             if request.cost_centre_id:
                 # If we didn't get token counts from the API, estimate them
                 if prompt_tokens == 0:
-                    prompt_tokens = len(prompt.split())
+                    prompt_tokens = len(str(prompt).split())
                 if completion_tokens == 0:
                     completion_tokens = 500  # Conservative estimate
 
@@ -173,7 +196,9 @@ class VertexAiRouterService(LlmRouterService):
             )
             raise HTTPException(status_code=500, detail=str(e))
 
-    @LlmRouterService.validation_with_retries(lambda x: True)
+    @LlmRouterService.validation_with_retries(
+        lambda x: Validator.validate_story_split(x.data)
+    )
     async def split_story(self, request: GenerateStoryRequest) -> SplitStoryResponse:
         try:
             text_generation_model_config = (
@@ -181,24 +206,27 @@ class VertexAiRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            prompt = str(
-                VertexAiConfigManager.get_prompt_story_split(
-                    request.model_type, request.prompt
-                )
+            prompt = VertexAiConfigManager.get_prompt_story_split(
+                request.model_type, request.prompt
             )
-            LlmLogger.log_prompt(request.cost_centre_id, prompt)
+            LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
-            model = GenerativeModel(text_generation_model_config.model_id)
+            model = self._create_model_with_system_message(
+                text_generation_model_config.model_id, prompt
+            )
             generation_config = GenerationConfig(
                 max_output_tokens=text_generation_model_config.max_tokens,
                 temperature=text_generation_model_config.temperature,
                 top_p=text_generation_model_config.top_p,
             )
 
-            prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
+            # Create user content
+            user_content = Content(
+                role="user", parts=[Part.from_text(prompt.user_message)]
+            )
 
             response = model.generate_content(
-                prompt_content,
+                user_content,
                 generation_config=generation_config,
             )
 
@@ -260,24 +288,27 @@ class VertexAiRouterService(LlmRouterService):
                     request.model_type
                 )
             )
-            prompt = str(
-                VertexAiConfigManager.get_prompt_story_summarise(
-                    request.model_type, request.story
-                )
+            prompt = VertexAiConfigManager.get_prompt_story_summarise(
+                request.model_type, request.story
             )
-            LlmLogger.log_prompt(request.cost_centre_id, prompt)
+            LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
-            model = GenerativeModel(text_generation_model_config.model_id)
+            model = self._create_model_with_system_message(
+                text_generation_model_config.model_id, prompt
+            )
             generation_config = GenerationConfig(
                 max_output_tokens=text_generation_model_config.max_tokens,
                 temperature=text_generation_model_config.temperature,
                 top_p=text_generation_model_config.top_p,
             )
 
-            prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
+            # Create user content
+            user_content = Content(
+                role="user", parts=[Part.from_text(prompt.user_message)]
+            )
 
             response = model.generate_content(
-                prompt_content,
+                user_content,
                 generation_config=generation_config,
             )
 
@@ -345,7 +376,6 @@ class VertexAiRouterService(LlmRouterService):
             total_completion_tokens = 0
             total_cost = embedding_cost
 
-            model = GenerativeModel(text_generation_model_config.model_id)
             generation_config = GenerationConfig(
                 max_output_tokens=text_generation_model_config.max_tokens,
                 temperature=text_generation_model_config.temperature,
@@ -378,19 +408,25 @@ class VertexAiRouterService(LlmRouterService):
                 total_cost += query_embedding_cost
 
                 # Use the updated get_prompt_image_generate method with entity_description
-                prompt = str(
-                    VertexAiConfigManager.get_prompt_image_generate(
-                        request.model_type,
-                        request.story,
-                        part,
-                        entity_description=entity_description,
-                    )
+                prompt = VertexAiConfigManager.get_prompt_image_generate(
+                    request.model_type,
+                    request.story,
+                    part,
+                    entity_description=entity_description,
                 )
-                LlmLogger.log_prompt(request.cost_centre_id, prompt)
+                LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
-                prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
+                model = self._create_model_with_system_message(
+                    text_generation_model_config.model_id, prompt
+                )
+
+                # Create user content
+                user_content = Content(
+                    role="user", parts=[Part.from_text(prompt.user_message)]
+                )
+
                 part_response = model.generate_content(
-                    prompt_content,
+                    user_content,
                     generation_config=generation_config,
                 )
 
@@ -454,10 +490,12 @@ class VertexAiRouterService(LlmRouterService):
             VertexAiConfigManager.get_text_generation_model_config(model_type)
         )
 
-        prompt = str(VertexAiConfigManager.get_prompt_story_entities(model_type, story))
-        LlmLogger.log_prompt(cost_centre_id, prompt)
+        prompt = VertexAiConfigManager.get_prompt_story_entities(model_type, story)
+        LlmLogger.log_prompt(cost_centre_id, str(prompt))
 
-        model = GenerativeModel(text_generation_model_config.model_id)
+        model = self._create_model_with_system_message(
+            text_generation_model_config.model_id, prompt
+        )
         generation_config = GenerationConfig(
             max_output_tokens=text_generation_model_config.max_tokens,
             temperature=0.2,  # Lower temperature for more deterministic output
@@ -465,9 +503,11 @@ class VertexAiRouterService(LlmRouterService):
         )
         # TODO: Is this cost being tracked?
 
-        prompt_content = Content(role="user", parts=[Part.from_text(prompt)])
+        # Create user content
+        user_content = Content(role="user", parts=[Part.from_text(prompt.user_message)])
+
         response = model.generate_content(
-            prompt_content,
+            user_content,
             generation_config=generation_config,
         )
 
