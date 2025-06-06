@@ -20,6 +20,7 @@ dependencies = [
     "google-cloud-bigquery>=3.11.0",
     "google-cloud-run>=0.10.17",
     "google-cloud-texttospeech>=2.26.0",
+    "google-genai>=1.19.0",
     "httpx>=0.28.1",
     "huggingface-hub>=0.29.2",
     "moviepy==2.2.1",
