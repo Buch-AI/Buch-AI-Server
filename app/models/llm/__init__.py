@@ -6,6 +6,7 @@ from app.models.llm.common import (
     TextGenerationModelConfig,
 )
 from app.models.llm.hugging_face import HuggingFaceConfigManager
+from app.models.llm.validation import Validator
 from app.models.llm.vertex_ai import VertexAiConfigManager
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "TextGenerationModelConfig",
     "HuggingFaceConfigManager",
     "VertexAiConfigManager",
+    "Validator",
 ]
