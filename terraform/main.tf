@@ -354,6 +354,55 @@ resource "google_bigquery_table" "users_profiles" {
   ])
 }
 
+resource "google_bigquery_table" "users_geolocation" {
+  dataset_id  = google_bigquery_dataset.users.dataset_id
+  table_id    = "geolocation"
+  description = "Table for storing user geolocation data"
+
+  schema = jsonencode([
+    {
+      name = "user_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "time"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
+    },
+    {
+      name = "ipv4"
+      type = "STRING"
+      mode = "NULLABLE"
+    },
+    {
+      name = "geolocation"
+      type = "STRING"
+      mode = "NULLABLE"
+    },
+    {
+      name = "coord_lat"
+      type = "FLOAT"
+      mode = "NULLABLE"
+    },
+    {
+      name = "coord_lon"
+      type = "FLOAT"
+      mode = "NULLABLE"
+    },
+    {
+      name = "country_code"
+      type = "STRING"
+      mode = "NULLABLE"
+    },
+    {
+      name = "is_vpn"
+      type = "BOOLEAN"
+      mode = "NULLABLE"
+    }
+  ])
+}
+
 # Google Cloud Storage
 
 resource "google_storage_bucket" "creations" {
