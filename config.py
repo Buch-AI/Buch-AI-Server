@@ -19,6 +19,9 @@ HF_API_KEY = os.getenv("BUCHAI_HF_API_KEY")
 if not HF_API_KEY:
     raise ValueError("BUCHAI_HF_API_KEY environment variable is not set")
 
+# NOTE: IPinfo.io API key is optional - free tier allows limited usage without token
+IPINFO_API_KEY = os.getenv("BUCHAI_IPINFO_API_KEY")
+
 # Google Cloud Storage URIs
 GCLOUD_STB_CREATIONS_NAME = "bai-buchai-p-stb-usea1-creations"
 

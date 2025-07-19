@@ -22,11 +22,11 @@ class CostCentreManager:
 
         # First, verify the creation belongs to the user
         verify_query = """
-      SELECT creation_id
-      FROM `bai-buchai-p.creations.profiles`
-      WHERE creation_id = @creation_id
-      AND user_id = @user_id
-      """
+        SELECT creation_id
+        FROM `bai-buchai-p.creations.profiles`
+        WHERE creation_id = @creation_id
+        AND user_id = @user_id
+        """
 
         verify_job_config = bigquery.QueryJobConfig(
             query_parameters=[
@@ -50,17 +50,17 @@ class CostCentreManager:
 
         # Insert the cost centre
         query = """
-      INSERT INTO `bai-buchai-p.creations.cost_centres` (
-          cost_centre_id, creation_id, user_id, created_at, cost
-      )
-      VALUES (
-          @cost_centre_id,
-          @creation_id,
-          @user_id,
-          CURRENT_TIMESTAMP(),
-          0
-      )
-      """
+        INSERT INTO `bai-buchai-p.creations.cost_centres` (
+            cost_centre_id, creation_id, user_id, created_at, cost
+        )
+        VALUES (
+            @cost_centre_id,
+            @creation_id,
+            @user_id,
+            CURRENT_TIMESTAMP(),
+            0
+        )
+        """
 
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
@@ -85,10 +85,10 @@ class CostCentreManager:
         try:
             bigquery_client = bigquery.Client()
             query = """
-          UPDATE `bai-buchai-p.creations.cost_centres`
-          SET cost = cost + @additional_cost
-          WHERE cost_centre_id = @cost_centre_id
-          """
+            UPDATE `bai-buchai-p.creations.cost_centres`
+            SET cost = cost + @additional_cost
+            WHERE cost_centre_id = @cost_centre_id
+            """
 
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
@@ -116,11 +116,11 @@ class CostCentreManager:
 
             # First verify the cost centre belongs to the user
             verify_query = """
-          SELECT cost_centre_id
-          FROM `bai-buchai-p.creations.cost_centres`
-          WHERE cost_centre_id = @cost_centre_id
-          AND user_id = @user_id
-          """
+            SELECT cost_centre_id
+            FROM `bai-buchai-p.creations.cost_centres`
+            WHERE cost_centre_id = @cost_centre_id
+            AND user_id = @user_id
+            """
 
             verify_job_config = bigquery.QueryJobConfig(
                 query_parameters=[
@@ -140,10 +140,10 @@ class CostCentreManager:
 
             # Delete the cost centre
             delete_query = """
-          DELETE FROM `bai-buchai-p.creations.cost_centres`
-          WHERE cost_centre_id = @cost_centre_id
-          AND user_id = @user_id
-          """
+            DELETE FROM `bai-buchai-p.creations.cost_centres`
+            WHERE cost_centre_id = @cost_centre_id
+            AND user_id = @user_id
+            """
 
             delete_job_config = bigquery.QueryJobConfig(
                 query_parameters=[

@@ -4,13 +4,14 @@ from traceback import format_exc
 from typing import Annotated
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from google.cloud import bigquery
 from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
+from app.models.geolocation import GeolocationProcessor
 from config import AUTH_JWT_KEY
 
 # Configure logging
@@ -39,6 +40,7 @@ class TokenData(BaseModel):
 
 
 class User(BaseModel):
+    user_id: str | None = None
     username: str
     email: str | None = None
     full_name: str | None = None
@@ -53,17 +55,17 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-
 def get_password_hash(password):
     return pwd_context.hash(password)
 
 
-async def get_user(username: str):
+def password_verified(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+async def get_user_db_record(username: str):
     query = """
-    SELECT username, email, password_hash, is_active
+    SELECT user_id, username, email, password_hash, is_active
     FROM `bai-buchai-p.users.auth`
     WHERE username = @username
     """
@@ -75,6 +77,7 @@ async def get_user(username: str):
 
     for row in results:
         return UserInDB(
+            user_id=row.user_id,
             username=row.username,
             email=row.email,
             hashed_password=row.password_hash,
@@ -83,24 +86,35 @@ async def get_user(username: str):
     return None
 
 
+def get_client_ipv4(request: Request) -> str:
+    """
+    Extract the client's IP address from the request.
+
+    Handles various proxy headers and fallbacks to direct connection.
+    """
+    # Check for forwarded headers (common in production behind load balancers)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        # X-Forwarded-For can contain multiple IPs, take the first one
+        return forwarded_for.split(",")[0].strip()
+
+    # Check for real IP header
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+
+    # Fallback to direct client connection
+    client_host = request.client.host if request.client else "unknown"
+    return client_host
+
+
 async def authenticate_user(username: str, password: str):
-    user = await get_user(username)
+    user = await get_user_db_record(username)
     if not user:
         return False
-    if not verify_password(password, user.hashed_password):
+    if not password_verified(password, user.hashed_password):
         return False
     return user
-
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, AUTH_JWT_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
 
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
@@ -119,7 +133,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     except InvalidTokenError:
         logger.error(f"Invalid token error\n{format_exc()}")
         raise credentials_exception
-    user = await get_user(token_data.username)
+    user = await get_user_db_record(token_data.username)
     if user is None:
         logger.error(f"User not found: {token_data.username}\n{format_exc()}")
         raise credentials_exception
@@ -137,8 +151,20 @@ async def get_current_active_user(
     return current_user
 
 
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, AUTH_JWT_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
 @auth_router.post("/token")
 async def login_for_access_token(
+    request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> Token:
     user = await authenticate_user(form_data.username, form_data.password)
@@ -151,6 +177,33 @@ async def login_for_access_token(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Log successful login geolocation data (non-blocking)
+    try:
+        client_ipv4 = get_client_ipv4(request)
+        if client_ipv4 and client_ipv4 != "unknown" and user.user_id:
+            processor = GeolocationProcessor(client_ipv4)
+            success = processor.log_user(user.user_id)
+
+            if success:
+                logger.info(
+                    f"Logged login geolocation for user {user.username} from IP {client_ipv4}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to log login geolocation for user {user.username} from IP {client_ipv4}"
+                )
+        else:
+            logger.warning(
+                f"Skipping login geolocation logging - IP: {client_ipv4}, User ID: {user.user_id}"
+            )
+
+    except Exception as e:
+        # Don't fail the login if geolocation logging fails
+        logger.error(
+            f"Error logging login geolocation for user {user.username}: {str(e)}"
+        )
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
@@ -159,14 +212,8 @@ async def login_for_access_token(
 
 
 @auth_router.get("/users/me", response_model=User)
-async def read_users_me(
+async def get_users_me(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
+    """Get current user information."""
     return current_user
-
-
-@auth_router.get("/users/me/items")
-async def read_own_items(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-):
-    return [{"item_id": "Foo", "owner": current_user.username}]
