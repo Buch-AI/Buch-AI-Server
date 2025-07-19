@@ -117,7 +117,7 @@ async def authenticate_user(username: str, password: str):
     return user
 
 
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
+async def _get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -140,8 +140,8 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     return user
 
 
-async def get_current_active_user(
-    current_user: Annotated[User, Depends(get_current_user)],
+async def get_current_user(
+    current_user: Annotated[User, Depends(_get_current_user)],
 ):
     if current_user.disabled:
         logger.error(
@@ -211,9 +211,49 @@ async def login_for_access_token(
     return Token(access_token=access_token, token_type="bearer")
 
 
+@auth_router.post("/token/refresh", response_model=Token)
+async def refresh_access_token(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Token:
+    """
+    Refresh an existing valid JWT token with a new expiration time.
+
+    This endpoint allows users to obtain a new JWT token using their existing valid token,
+    extending the session without requiring username/password authentication again.
+
+    Args:
+        current_user: User object from the validated JWT token
+
+    Returns:
+        Token: New JWT token with fresh expiration time
+
+    Raises:
+        HTTPException: If the current token is invalid or user is inactive
+    """
+    try:
+        # Create a new access token with fresh expiration
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": current_user.username}, expires_delta=access_token_expires
+        )
+
+        logger.info(f"Token refreshed successfully for user: {current_user.username}")
+
+        return Token(access_token=access_token, token_type="bearer")
+
+    except Exception as e:
+        logger.error(
+            f"Error refreshing token for user {current_user.username}: {str(e)}\n{format_exc()}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refresh token",
+        )
+
+
 @auth_router.get("/users/me", response_model=User)
 async def get_users_me(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Get current user information."""
     return current_user

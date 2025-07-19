@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import bigquery
 from pydantic import BaseModel
 
-from app.server.routers.auth_routes import User, get_current_active_user
+from app.server.routers.auth_routes import User, get_current_user
 from app.server.routers.creation_routes import CreationProfile
 
 # Configure logging
@@ -23,7 +23,7 @@ class CreationsResponse(BaseModel):
 
 @me_router.get("/creations", response_model=CreationsResponse)
 async def get_user_creations(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> CreationsResponse:
     """Get all creations for the current user."""
     # Initialize BigQuery client

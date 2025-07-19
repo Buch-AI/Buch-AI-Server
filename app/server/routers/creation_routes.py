@@ -14,7 +14,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from app.models.cost_centre import CostCentreManager
-from app.server.routers.auth_routes import User, get_current_active_user
+from app.server.routers.auth_routes import User, get_current_user
 from app.tasks.video_generator.main import VideoGenerator
 from config import ENV, GCLOUD_STB_CREATIONS_NAME
 
@@ -93,7 +93,7 @@ class CostCentreResponse(BaseModel):
 async def set_story_parts(
     creation_id: str,
     story_parts: List[List[str]],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> StoryPartsResponse:
     """Set story parts for a specific creation.
 
@@ -132,7 +132,7 @@ async def set_story_parts(
     "/{creation_id}/get_story_parts", response_model=StoryPartsResponse
 )
 async def get_story_parts(
-    creation_id: str, current_user: Annotated[User, Depends(get_current_active_user)]
+    creation_id: str, current_user: Annotated[User, Depends(get_current_user)]
 ) -> StoryPartsResponse:
     """Get story parts for a specific creation.
 
@@ -198,7 +198,7 @@ async def get_story_parts(
 async def set_images(
     creation_id: str,
     images: List[ImageDataRequest],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ImagesResponse:
     """Set images for a specific creation."""
     try:
@@ -285,7 +285,7 @@ async def set_images(
 
 @creation_router.get("/{creation_id}/get_images", response_model=ImagesResponse)
 async def get_images(
-    creation_id: str, current_user: Annotated[User, Depends(get_current_active_user)]
+    creation_id: str, current_user: Annotated[User, Depends(get_current_user)]
 ) -> ImagesResponse:
     """Get images for a specific creation."""
     try:
@@ -329,7 +329,7 @@ async def get_images(
 
 @creation_router.get("/{creation_id}/get_video", response_model=VideoResponse)
 async def get_video(
-    creation_id: str, current_user: Annotated[User, Depends(get_current_active_user)]
+    creation_id: str, current_user: Annotated[User, Depends(get_current_user)]
 ) -> VideoResponse:
     """Get video for a specific creation."""
     try:
@@ -367,7 +367,7 @@ async def get_video(
 )
 async def generate_video_status(
     creation_id: str,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> TaskStatusResponse:
     """Get the status of video generation for a creation."""
     try:
@@ -491,7 +491,7 @@ async def generate_video_status(
 @creation_router.get("/{creation_id}/generate_video", response_model=TaskStatusResponse)
 async def generate_video(
     creation_id: str,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
     cost_centre_id: Optional[str] = None,
 ) -> TaskStatusResponse:
     """Generate a video for a specific creation.
@@ -608,7 +608,7 @@ async def generate_video(
 
 @creation_router.post("/generate", response_model=CreationResponse)
 async def generate_creation(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> CreationResponse:
     """Generate a new creation."""
     try:
@@ -666,7 +666,7 @@ async def generate_creation(
 )
 async def generate_cost_centre(
     creation_id: str,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> CostCentreResponse:
     """Generate a new cost centre for a specific creation."""
     try:
@@ -686,7 +686,7 @@ async def generate_cost_centre(
 @creation_router.delete("/{creation_id}/delete", response_model=CreationResponse)
 async def delete_creation(
     creation_id: str,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> CreationResponse:
     """Delete a creation and all its associated data."""
     try:
@@ -762,7 +762,7 @@ async def delete_creation(
 async def update_creation(
     creation_id: str,
     update_data: CreationProfileUpdate,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> CreationResponse:
     """Update editable fields for a specific creation."""
     try:
