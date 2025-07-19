@@ -162,6 +162,36 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     return encoded_jwt
 
 
+async def update_last_login(user_id: str) -> bool:
+    """
+    Update the last_login timestamp for a user in the database.
+
+    Args:
+        user_id: The ID of the user to update
+
+    Returns:
+        bool: True if update was successful, False otherwise
+    """
+    try:
+        query = """
+        UPDATE `bai-buchai-p.users.auth`
+        SET last_login = CURRENT_TIMESTAMP()
+        WHERE user_id = @user_id
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
+            ]
+        )
+        query_job = client.query(query, job_config=job_config)
+        query_job.result()  # Wait for the job to complete
+
+        return True
+    except Exception as e:
+        logger.error(f"Failed to update last_login for user {user_id}: {str(e)}")
+        return False
+
+
 @auth_router.post("/token")
 async def login_for_access_token(
     request: Request,
@@ -177,6 +207,20 @@ async def login_for_access_token(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Update last login timestamp (non-blocking)
+    if user.user_id:
+        try:
+            success = await update_last_login(user.user_id)
+            if success:
+                logger.info(f"Updated last_login for user: {user.username}")
+            else:
+                logger.warning(f"Failed to update last_login for user: {user.username}")
+        except Exception as e:
+            # Don't fail the login if last_login update fails
+            logger.error(
+                f"Error updating last_login for user {user.username}: {str(e)}"
+            )
 
     # Log successful login geolocation data (non-blocking)
     try:
@@ -236,6 +280,24 @@ async def refresh_access_token(
         access_token = create_access_token(
             data={"sub": current_user.username}, expires_delta=access_token_expires
         )
+
+        # Update last login timestamp (non-blocking)
+        if current_user.user_id:
+            try:
+                success = await update_last_login(current_user.user_id)
+                if success:
+                    logger.info(
+                        f"Updated last_login for user during refresh: {current_user.username}"
+                    )
+                else:
+                    logger.warning(
+                        f"Failed to update last_login for user during refresh: {current_user.username}"
+                    )
+            except Exception as e:
+                # Don't fail the refresh if last_login update fails
+                logger.error(
+                    f"Error updating last_login during refresh for user {current_user.username}: {str(e)}"
+                )
 
         logger.info(f"Token refreshed successfully for user: {current_user.username}")
 
