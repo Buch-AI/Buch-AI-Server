@@ -32,7 +32,7 @@ cost_centre_manager = CostCentreManager()
 
 
 class HuggingFaceRouterService(LlmRouterService):
-    """HuggingFace implementation of the LLM router service."""
+    """Hugging Face implementation of the LLM router service."""
 
     def __init__(self):
         if not HF_API_KEY:
@@ -49,7 +49,7 @@ class HuggingFaceRouterService(LlmRouterService):
         )
 
     def _convert_prompt_to_messages(self, prompt: Prompt) -> List[Dict[str, str]]:
-        """Convert a Prompt object to HuggingFace message format."""
+        """Convert a Prompt object to Hugging Face message format."""
         return [
             {"role": "system", "content": prompt.system_message},
             {"role": "user", "content": prompt.user_message},
@@ -103,7 +103,7 @@ class HuggingFaceRouterService(LlmRouterService):
             )
         except Exception as e:
             logger.error(
-                f"Error generating story with HuggingFace: {str(e)}\n{format_exc()}"
+                f"Error generating story with Hugging Face: {str(e)}\n{format_exc()}"
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
@@ -156,7 +156,7 @@ class HuggingFaceRouterService(LlmRouterService):
 
         except Exception as e:
             logger.error(
-                f"Error streaming story with HuggingFace: {str(e)}\n{format_exc()}"
+                f"Error streaming story with Hugging Face: {str(e)}\n{format_exc()}"
             )
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -176,12 +176,29 @@ class HuggingFaceRouterService(LlmRouterService):
             messages = self._convert_prompt_to_messages(prompt)
             LlmLogger.log_prompt(request.cost_centre_id, str(prompt))
 
+            # Define JSON schema for story split response
+            story_split_schema = {
+                "type": "json",
+                "value": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 3,
+                        "maxItems": 3,
+                    },
+                    "minItems": 4,
+                    "maxItems": 4,
+                },
+            }
+
             response = self.client.chat.completions.create(
                 messages=messages,
                 model=text_generation_model_config.model_id,
                 max_tokens=text_generation_model_config.max_tokens,
                 temperature=text_generation_model_config.temperature,
                 top_p=text_generation_model_config.top_p,
+                response_format=story_split_schema,
             )
 
             # Extract usage data for cost calculation
@@ -196,21 +213,32 @@ class HuggingFaceRouterService(LlmRouterService):
                     request.cost_centre_id, cost
                 )
 
-            # Parse the response into parts and sub-parts
-            text = response.choices[0].message.content
-            parts = text.split("[PART]")
+            # Parse the JSON response
+            try:
+                result = json.loads(response.choices[0].message.content)
 
-            # Process each part to extract sub-parts and clean the text
-            result = []
-            for part in parts:
-                if part.strip():
-                    sub_parts = part.split("[SUBPART]")
-                    # Clean each sub-part
-                    cleaned_sub_parts = [
-                        sub_part.strip() for sub_part in sub_parts if sub_part.strip()
-                    ]
-                    if cleaned_sub_parts:
-                        result.append(cleaned_sub_parts)
+                # Basic structure validation and cleaning
+                if isinstance(result, list):
+                    cleaned_result = []
+                    for part in result:
+                        if isinstance(part, list):
+                            cleaned_sub_parts = [
+                                sub_part.strip()
+                                for sub_part in part
+                                if isinstance(sub_part, str) and sub_part.strip()
+                            ]
+                            if cleaned_sub_parts:
+                                cleaned_result.append(cleaned_sub_parts)
+                    result = cleaned_result
+                else:
+                    result = []
+
+            except json.JSONDecodeError as e:
+                logger.error(
+                    f"Failed to parse JSON response from Hugging Face: {str(e)}"
+                )
+                # Return empty result - validation decorator will handle this
+                result = []
 
             return SplitStoryResponse(
                 data=result,
@@ -224,7 +252,7 @@ class HuggingFaceRouterService(LlmRouterService):
             )
         except Exception as e:
             logger.error(
-                f"Error splitting story with HuggingFace: {str(e)}\n{format_exc()}"
+                f"Error splitting story with Hugging Face: {str(e)}\n{format_exc()}"
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
@@ -276,7 +304,7 @@ class HuggingFaceRouterService(LlmRouterService):
             )
         except Exception as e:
             logger.error(
-                f"Error summarising story with HuggingFace: {str(e)}\n{format_exc()}"
+                f"Error summarising story with Hugging Face: {str(e)}\n{format_exc()}"
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
@@ -393,7 +421,7 @@ class HuggingFaceRouterService(LlmRouterService):
 
         except Exception as e:
             logger.error(
-                f"Error generating image prompts with HuggingFace: {str(e)}\n{format_exc()}"
+                f"Error generating image prompts with Hugging Face: {str(e)}\n{format_exc()}"
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
@@ -479,7 +507,7 @@ class HuggingFaceRouterService(LlmRouterService):
             HuggingFaceConfigManager.get_text_embedding_model_config(model_type)
         )
 
-        # Create embeddings using the HuggingFace client
+        # Create embeddings using the Hugging Face client
         embedding_response = self.client.feature_extraction(
             text=descriptions, model=embedding_model_config.model_id
         )

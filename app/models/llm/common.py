@@ -93,14 +93,15 @@ class ConfigManager(ABC):
             system_message=(
                 "You are a story structure analyzer. "
                 "Your task is to reorganize story text into exactly 4 main parts with 3 sub-parts each. "
-                "Use [PART] tags to separate main parts and [SUBPART] tags to separate sub-parts within each part. "
-                "Ensure each section has meaningful content and natural narrative flow. "
+                "Each part should have meaningful content and natural narrative flow. "
                 "Remove excessive line breaks but preserve paragraph structure. "
-                "Output ONLY the formatted story text with tags - no explanations or section titles."
+                "Return your response as a JSON array where each element is an array of 3 sub-parts. "
+                "The JSON structure should be: [[sub1, sub2, sub3], [sub1, sub2, sub3], [sub1, sub2, sub3], [sub1, sub2, sub3]]"
             ),
             user_message=(
                 f"Restructure the following story into 4 parts with 3 sub-parts each, "
-                f"ensuring balanced content distribution and logical narrative breaks:\n"
+                f"ensuring balanced content distribution and logical narrative breaks. "
+                f"Return the result as a JSON array of arrays:\n"
                 f'"""\n{_user_prompt}\n"""'
             ),
         )

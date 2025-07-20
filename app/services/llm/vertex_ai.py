@@ -214,10 +214,26 @@ class VertexAiRouterService(LlmRouterService):
             model = self._create_model_with_system_message(
                 text_generation_model_config.model_id, prompt
             )
+
+            # Define JSON schema for story split response
+            story_split_schema = {
+                "type": "array",
+                "items": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                },
+                "minItems": 4,
+                "maxItems": 4,
+            }
+
             generation_config = GenerationConfig(
                 max_output_tokens=text_generation_model_config.max_tokens,
                 temperature=text_generation_model_config.temperature,
                 top_p=text_generation_model_config.top_p,
+                response_mime_type="application/json",
+                response_schema=story_split_schema,
             )
 
             # Create user content
@@ -246,21 +262,30 @@ class VertexAiRouterService(LlmRouterService):
                     request.cost_centre_id, cost
                 )
 
-            # Parse the response into parts and sub-parts
-            text = response.text
-            parts = text.split("[PART]")
+            # Parse the JSON response
+            try:
+                result = json.loads(response.text)
 
-            # Process each part to extract sub-parts and clean the text
-            result = []
-            for part in parts:
-                if part.strip():
-                    sub_parts = part.split("[SUBPART]")
-                    # Clean each sub-part
-                    cleaned_sub_parts = [
-                        sub_part.strip() for sub_part in sub_parts if sub_part.strip()
-                    ]
-                    if cleaned_sub_parts:
-                        result.append(cleaned_sub_parts)
+                # Basic structure validation and cleaning
+                if isinstance(result, list):
+                    cleaned_result = []
+                    for part in result:
+                        if isinstance(part, list):
+                            cleaned_sub_parts = [
+                                sub_part.strip()
+                                for sub_part in part
+                                if isinstance(sub_part, str) and sub_part.strip()
+                            ]
+                            if cleaned_sub_parts:
+                                cleaned_result.append(cleaned_sub_parts)
+                    result = cleaned_result
+                else:
+                    result = []
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON response from Vertex AI: {str(e)}")
+                # Return empty result - validation decorator will handle this
+                result = []
 
             return SplitStoryResponse(
                 data=result,
