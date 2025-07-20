@@ -413,3 +413,85 @@ resource "google_storage_bucket" "creations" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
 }
+
+# Payments Dataset and Tables
+
+resource "google_bigquery_dataset" "payments" {
+  dataset_id  = "payments"
+  location    = "us-east1"
+  description = "Dataset for storing payment and transaction data"
+}
+
+resource "google_bigquery_table" "payments_records" {
+  dataset_id  = google_bigquery_dataset.payments.dataset_id
+  table_id    = "records"
+  description = "Table for storing payment transaction records"
+
+  schema = jsonencode([
+    {
+      name = "payment_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "user_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "stripe_payment_intent_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "amount"
+      type = "INT64"
+      mode = "REQUIRED"
+    },
+    {
+      name = "currency"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "status"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "payment_type"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "product_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "quantity"
+      type = "INT64"
+      mode = "REQUIRED"
+    },
+    {
+      name = "description"
+      type = "STRING"
+      mode = "NULLABLE"
+    },
+    {
+      name = "created_at"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
+    },
+    {
+      name = "updated_at"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
+    },
+    {
+      name = "completed_at"
+      type = "TIMESTAMP"
+      mode = "NULLABLE"
+    }
+  ])
+}

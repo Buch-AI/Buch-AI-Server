@@ -7,6 +7,7 @@ from app.server.routers.database_routes import database_router
 from app.server.routers.image_routes import image_router
 from app.server.routers.llm_routes import llm_router
 from app.server.routers.me_routes import me_router
+from app.server.routers.payment_routes import payment_router
 
 app = FastAPI()
 
@@ -41,6 +42,7 @@ app.include_router(database_router, prefix="/database")
 app.include_router(creation_router, prefix="/creation")
 app.include_router(llm_router, prefix="/llm")
 app.include_router(image_router, prefix="/image")
+app.include_router(payment_router, prefix="/payment")
 
 if __name__ == "__main__":
     import uvicorn

@@ -51,6 +51,8 @@ jobs:
             --build-arg BUCHAI_ENV=${{ vars.BUCHAI_ENV }} \
             --build-arg BUCHAI_AUTH_JWT_KEY=${{ secrets.BUCHAI_AUTH_JWT_KEY }} \
             --build-arg BUCHAI_HF_API_KEY=${{ secrets.BUCHAI_HF_API_KEY }} \
+            --build-arg BUCHAI_STRIPE_SECRET_KEY=${{ secrets.BUCHAI_STRIPE_SECRET_KEY }} \
+            --build-arg BUCHAI_STRIPE_WEBHOOK_SECRET=${{ secrets.BUCHAI_STRIPE_WEBHOOK_SECRET }} \
             .
 
           echo "Building server image..."

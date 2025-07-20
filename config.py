@@ -22,6 +22,15 @@ if not HF_API_KEY:
 # NOTE: IPinfo.io API key is optional - free tier allows limited usage without token
 IPINFO_API_KEY = os.getenv("BUCHAI_IPINFO_API_KEY")
 
+# Stripe configuration
+STRIPE_SECRET_KEY = os.getenv("BUCHAI_STRIPE_SECRET_KEY")
+if not STRIPE_SECRET_KEY:
+    raise ValueError("BUCHAI_STRIPE_SECRET_KEY environment variable is not set")
+
+STRIPE_WEBHOOK_SECRET = os.getenv("BUCHAI_STRIPE_WEBHOOK_SECRET")
+if not STRIPE_WEBHOOK_SECRET:
+    raise ValueError("BUCHAI_STRIPE_WEBHOOK_SECRET environment variable is not set")
+
 # Google Cloud Storage URIs
 GCLOUD_STB_CREATIONS_NAME = "bai-buchai-p-stb-usea1-creations"
 
