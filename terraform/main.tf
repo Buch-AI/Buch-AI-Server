@@ -459,7 +459,7 @@ resource "google_bigquery_table" "payments_records" {
       mode = "REQUIRED"
     },
     {
-      name = "payment_type"
+      name = "product_type"
       type = "STRING"
       mode = "REQUIRED"
     },
@@ -492,6 +492,163 @@ resource "google_bigquery_table" "payments_records" {
       name = "completed_at"
       type = "TIMESTAMP"
       mode = "NULLABLE"
+    }
+  ])
+}
+
+# User Credits and Subscriptions Tables
+
+resource "google_bigquery_table" "users_credits" {
+  dataset_id  = google_bigquery_dataset.users.dataset_id
+  table_id    = "credits"
+  description = "Table for storing user credit balances"
+
+  schema = jsonencode([
+    {
+      name = "user_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "balance"
+      type = "INT64"
+      mode = "REQUIRED"
+    },
+    {
+      name = "total_earned"
+      type = "INT64"
+      mode = "REQUIRED"
+    },
+    {
+      name = "total_spent"
+      type = "INT64"
+      mode = "REQUIRED"
+    },
+    {
+      name = "last_updated"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
+    },
+    {
+      name = "created_at"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
+    }
+  ])
+}
+
+resource "google_bigquery_table" "users_subscriptions" {
+  dataset_id  = google_bigquery_dataset.users.dataset_id
+  table_id    = "subscriptions"
+  description = "Table for storing user subscription data"
+
+  schema = jsonencode([
+    {
+      name = "subscription_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "user_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "stripe_subscription_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "plan_name"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "status"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "credits_monthly"
+      type = "INT64"
+      mode = "REQUIRED"
+    },
+    {
+      name = "current_period_start"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
+    },
+    {
+      name = "current_period_end"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
+    },
+    {
+      name = "cancel_at_period_end"
+      type = "BOOLEAN"
+      mode = "NULLABLE"
+    },
+    {
+      name = "created_at"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
+    },
+    {
+      name = "updated_at"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
+    }
+  ])
+}
+
+# Credits Dataset and Tables
+
+resource "google_bigquery_dataset" "credits" {
+  dataset_id  = "credits"
+  location    = "us-east1"
+  description = "Dataset for storing credit transaction data"
+}
+
+resource "google_bigquery_table" "credits_transactions" {
+  dataset_id  = google_bigquery_dataset.credits.dataset_id
+  table_id    = "transactions"
+  description = "Table for storing credit transaction records"
+
+  schema = jsonencode([
+    {
+      name = "transaction_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "user_id"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "type"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "amount"
+      type = "INT64"
+      mode = "REQUIRED"
+    },
+    {
+      name = "description"
+      type = "STRING"
+      mode = "NULLABLE"
+    },
+    {
+      name = "reference_id"
+      type = "STRING"
+      mode = "NULLABLE"
+    },
+    {
+      name = "created_at"
+      type = "TIMESTAMP"
+      mode = "REQUIRED"
     }
   ])
 }

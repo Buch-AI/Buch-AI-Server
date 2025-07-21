@@ -14,30 +14,49 @@ This guide explains how to set up your Stripe products to work seamlessly with t
 
 Add these metadata keys to your Stripe products for automatic categorization:
 
+#### Product Types
+
 | Metadata Key | Value | Description |
 |--------------|-------|-------------|
-| `payment_type` | `credit_purchase` | For AI credits/tokens |
-| `payment_type` | `feature_unlock` | For premium features |
-| `payment_type` | `one_time` | For one-time purchases |
+| `product_type` | `SUBSCRIPTION` | For recurring subscription plans |
+| `product_type` | `BONUS` | For one-time credit purchases |
 
-**Without metadata**, the system uses fallback logic:
-- Products with "credit" in name/description → `credit_purchase`
-- Products with "premium" or "feature" in name/description → `feature_unlock`
-- Everything else → `one_time`
+#### Credit Configuration
+
+| Metadata Key | Value | Description | Used For |
+|--------------|-------|-------------|-----------|
+| `credits_permanent` | Number (e.g., `100`) | Credits granted for one-time purchases | Bonus products |
+| `credits_monthly` | Number (e.g., `300`) | Monthly credit allocation | Subscription products |
+
+**Automatic Detection**: The system primarily uses Stripe's price type for classification:
+- **Recurring prices** → `SUBSCRIPTION` type
+- **One-time prices** → `BONUS` type
+
+**Metadata Override**: Product or price metadata with `product_type` will override automatic detection.
+
+**Fallback Logic**: If price type is unavailable, the system uses product name patterns:
+- Products with "subscription", "monthly", or "plan" in the name → `SUBSCRIPTION`
+- Everything else → `BONUS`
 
 ### 3. Example Stripe Products
 
-#### AI Credits Product
-- **Name**: "100 AI Credits"
-- **Description**: "Credits for AI story generation and image creation"
-- **Price**: $4.99
-- **Metadata**: `payment_type: credit_purchase`
+#### Subscription Product
+- **Name**: "Premium Monthly Plan"
+- **Description**: "Monthly subscription with 300 AI credits"
+- **Price**: $9.99/month (recurring)
+- **Price Metadata**: `credits_monthly: 300`
+- **Type**: Automatically detected as `SUBSCRIPTION` (recurring price)
 
-#### Premium Feature Product
-- **Name**: "Premium Creation Pack"
-- **Description**: "Unlock advanced AI features for story and image generation"
-- **Price**: $9.99
-- **Metadata**: `payment_type: feature_unlock`
+#### Bonus Credits Product
+- **Name**: "100 AI Credits"
+- **Description**: "One-time purchase of AI credits"
+- **Price**: $4.99 (one-time)
+- **Price Metadata**: `credits_permanent: 100`
+- **Type**: Automatically detected as `BONUS` (one-time price)
+
+#### Advanced Configuration Example
+- **Product Metadata**: `product_type: BONUS` (explicit override)
+- **Price Metadata**: `credits_permanent: 250` (credits to grant)
 
 ## Real-Time Product Fetching
 
@@ -47,12 +66,15 @@ The system automatically fetches products from Stripe in real-time when:
 
 **No manual syncing required!** Products are always up-to-date with your Stripe catalog.
 
+The system supports both one-time and recurring prices, automatically categorizing them based on Stripe's price type.
+
 ## Benefits of Real-Time Fetching
 
 ✅ **Always Current** - Products are always in sync with Stripe  
 ✅ **No Manual Work** - No scripts to run or caches to manage  
 ✅ **Instant Updates** - Changes in Stripe appear immediately  
 ✅ **Simplified Architecture** - Fewer components to maintain  
+✅ **Smart Classification** - Automatic product type detection based on price type
 
 ## Web-Only Payment Implementation
 
@@ -79,7 +101,7 @@ The system automatically fetches products from Stripe in real-time when:
 - `POST /payment/create-checkout-session` - Creates checkout session for web users
 
 **Webhook Events**:
-- `checkout.session.completed` - Handles successful payments
+- `checkout.session.completed` - Handles successful payments and subscriptions
 
 ### User Experience
 
@@ -100,6 +122,45 @@ Tap Payment → See "Web Only" Message → Get Instructions to Use Browser
 📱 **Mobile Compatible** - Works in mobile browsers  
 🎨 **Consistent UX** - Stripe's optimized checkout experience  
 ⚡ **Easy Testing** - Simple webhook and redirect flow  
+
+## Credit System Integration
+
+### Automatic Credit Management
+
+The system automatically handles credit allocation based on product type:
+
+#### For Subscription Products
+- **Monthly Credits**: Granted based on `credits_monthly` metadata
+- **Renewal Handling**: Credits reset each billing period
+- **Plan Changes**: Credit allocation adjusts automatically
+
+#### For Bonus Products
+- **Permanent Credits**: Added to user's account based on `credits_permanent` metadata
+- **Immediate Availability**: Credits are available right after purchase
+- **Quantity Support**: Supports multiple quantities in a single purchase
+
+### Credit Calculation Functions
+
+The system includes specialized functions for credit calculation:
+
+- `get_credits_for_bonus_purchase(product_id, quantity)` - Calculates credits for one-time purchases
+- `get_credits_for_subscription_purchase(plan_name)` - Determines monthly credit allocation for subscriptions
+
+### Fallback Credit Values
+
+If metadata is not configured, the system uses fallback calculations:
+
+#### Bonus Products
+- **Primary**: 1 credit per dollar spent
+- **Fallback**: 10 credits per item
+
+#### Subscription Products
+Default monthly credits by plan name:
+- `basic`: 100 credits
+- `premium`: 300 credits  
+- `pro`: 500 credits
+- `starter`: 50 credits
+- **Default**: 100 credits
 
 ## Local Development & Webhook Testing
 
@@ -149,8 +210,9 @@ brew install stripe/stripe-cli/stripe
 5. **Test Webhook Events:**
    ```bash
    # Terminal 3: Trigger test webhook events
-   stripe trigger payment_intent.succeeded
-   stripe trigger payment_intent.payment_failed
+   stripe trigger checkout.session.completed
+   stripe trigger invoice.payment_succeeded
+   stripe trigger customer.subscription.created
    ```
 
 #### Benefits of Stripe CLI:
@@ -185,7 +247,7 @@ brew install ngrok
    - Copy the ngrok URL (e.g., `https://abc123.ngrok.io`)
    - Go to [Stripe Dashboard > Webhooks](https://dashboard.stripe.com/webhooks)
    - Add endpoint: `https://abc123.ngrok.io/payment/webhook`
-   - Select events: `payment_intent.succeeded`, `payment_intent.payment_failed`
+   - Select events: `checkout.session.completed`, `invoice.payment_succeeded`, `customer.subscription.created`
    - Copy the webhook signing secret to your environment
 
 ### Development Environment Setup
@@ -223,24 +285,36 @@ EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_your_test_publishable_key_here
 
 2. **Test Payment Flow:**
    - Navigate to payment screen in your app
-   - Select a product
+   - Select a product (both one-time and subscription)
    - Use test card: `4242 4242 4242 4242`
    - Complete payment
    - Watch webhook events in Terminal 2
-   - Check database for payment records
+   - Check database for payment records and credit allocation
 
 3. **Manual Webhook Testing:**
    ```bash
    # Test different scenarios
-   stripe trigger payment_intent.succeeded
-   stripe trigger payment_intent.payment_failed
-   stripe trigger payment_intent.created
+   stripe trigger checkout.session.completed
+   stripe trigger invoice.payment_succeeded
+   stripe trigger customer.subscription.created
+   stripe trigger customer.subscription.updated
    ```
 
 4. **Check Database:**
    ```sql
+   -- Check payment records
    SELECT * FROM `bai-buchai-p.payments.records` 
    ORDER BY created_at DESC 
+   LIMIT 10;
+   
+   -- Check subscription records
+   SELECT * FROM `bai-buchai-p.users.subscriptions`
+   ORDER BY created_at DESC
+   LIMIT 10;
+   
+   -- Check credit transactions
+   SELECT * FROM `bai-buchai-p.users.credit_transactions`
+   ORDER BY created_at DESC
    LIMIT 10;
    ```
 
@@ -251,7 +325,11 @@ Configure Stripe webhooks for production deployment:
 1. Go to [Stripe Dashboard > Webhooks](https://dashboard.stripe.com/webhooks)
 2. Add endpoint: `https://your-api-url/payment/webhook`
 3. Select events:
-   - `checkout.session.completed` (for web payments)
+   - `checkout.session.completed` (for all payments)
+   - `invoice.payment_succeeded` (for subscription renewals)
+   - `customer.subscription.created` (for new subscriptions)
+   - `customer.subscription.updated` (for subscription changes)
+   - `customer.subscription.deleted` (for cancellations)
 4. Copy webhook signing secret to your production environment variables
 
 ## Environment Variables
@@ -290,66 +368,45 @@ Use Stripe's test card numbers for different scenarios:
 For products to appear in your app, they must:
 1. **Be active** in Stripe
 2. **Have at least one active price**
-3. **Use one-time pricing** (not recurring subscriptions)
+3. **Support both one-time and recurring pricing**
 
-## Benefits of Real-Time Fetching
+### Supported Price Types
+- ✅ **One-time prices** - Automatically classified as `BONUS`
+- ✅ **Recurring prices** - Automatically classified as `SUBSCRIPTION`
+- ✅ **Mixed pricing** - Same product can have both types
 
+## Benefits of Enhanced Product System
+
+✅ **Smart Classification** - Automatic type detection based on price type  
 ✅ **Always Current** - Products are always in sync with Stripe  
 ✅ **No Manual Work** - No scripts to run or caches to manage  
 ✅ **Instant Updates** - Changes in Stripe appear immediately  
-✅ **Simplified Architecture** - Fewer components to maintain  
-
-## Multi-Platform Payment Support
-
-The payment system automatically adapts to the platform:
-
-### Web Payments (React Native Web)
-- **Uses Stripe Checkout** - Hosted payment page
-- **No additional dependencies** - Works out of the box
-- **Secure redirect flow** - Users redirected to Stripe's secure checkout
-- **Mobile-optimized** - Stripe Checkout is responsive
-
-### Mobile Payments (iOS/Android)
-- **Uses Stripe React Native SDK** - Native payment components
-- **Apple Pay/Google Pay** - Built-in wallet support
-- **In-app experience** - No redirects required
-- **Touch ID/Face ID** - Biometric authentication support
-
-### Automatic Platform Detection
-The app automatically detects the platform and uses the appropriate payment method:
-
-```typescript
-// Automatically chooses the right payment flow
-const isWeb = PaymentAdapter.shouldUseWebCheckout();
-
-if (isWeb) {
-  // Redirect to Stripe Checkout
-  await paymentAdapter.createCheckoutSession({...});
-} else {
-  // Use native payment sheet
-  await paymentAdapter.createPaymentIntent({...});
-}
-```
-
-### API Endpoints
-
-The backend provides two payment endpoints:
-
-| Endpoint | Platform | Purpose |
-|----------|----------|---------|
-| `POST /payment/create-payment-intent` | Mobile | Creates payment intent for React Native |
-| `POST /payment/create-checkout-session` | Web | Creates checkout session for web redirect |
-
-Both endpoints are handled by the same webhook system for consistent processing.
+✅ **Flexible Credit System** - Supports both permanent and monthly credits  
+✅ **Subscription Support** - Full subscription lifecycle management  
 
 ## Troubleshooting
 
 ### No Products Showing
 1. Check Stripe products are **active**
 2. Verify products have **active prices**
-3. Ensure prices are **one-time** (not recurring)
-4. Check environment variables are set correctly
-5. Review API logs for Stripe errors
+3. Check environment variables are set correctly
+4. Review API logs for Stripe errors
+
+### Credit Allocation Issues
+1. **Bonus Credits Not Granted:**
+   - Verify `credits_permanent` metadata is set on price or product
+   - Check webhook processing logs
+   - Ensure price type is `one_time`
+
+2. **Subscription Credits Not Allocated:**
+   - Verify `credits_monthly` metadata is set
+   - Check price nickname matches plan name
+   - Ensure price type is `recurring`
+
+3. **Wrong Credit Amount:**
+   - Check metadata values are valid integers
+   - Review fallback credit calculation logic
+   - Verify price type detection
 
 ### Webhook Issues (Development)
 1. **Webhooks not received:**
@@ -372,15 +429,11 @@ Both endpoints are handled by the same webhook system for consistent processing.
 3. Review application logs
 4. Test with Stripe test cards
 
-### Slow Product Loading
-1. Consider adding client-side caching if needed
-2. Monitor Stripe API rate limits
-3. Check network connectivity to Stripe
-
 ### Product Type Issues
-1. Add explicit `payment_type` metadata to Stripe products
-2. Check product names/descriptions contain expected keywords
-3. Review the automatic classification logic in the code
+1. Add explicit `product_type` metadata to Stripe products or prices
+2. Check that price types are correctly set in Stripe
+3. Review the automatic classification logic in `determine_product_type`
+4. Verify product names contain expected keywords for fallback logic
 
 ## Security Best Practices
 

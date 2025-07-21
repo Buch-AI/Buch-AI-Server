@@ -10,13 +10,23 @@ from google.cloud import bigquery
 from pydantic import BaseModel
 
 from app.models.payment import (
+    CreditBalanceResponse,
+    CreditTransactionType,
     PaymentHistoryResponse,
     PaymentRecord,
     PaymentStatus,
-    PaymentType,
     ProductInfo,
+    ProductType,
+    UserSubscriptionResponse,
 )
 from app.server.routers.auth_routes import User, get_current_user
+from app.services.payments.credit_manager import CreditManager
+from app.services.payments.stripe import (
+    fetch_products,
+    get_credits_for_bonus_purchase,
+    get_subscription_plan_name,
+)
+from app.services.payments.subscription_manager import SubscriptionManager
 from config import STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
 
 # Configure logging
@@ -29,8 +39,10 @@ stripe.api_key = STRIPE_SECRET_KEY
 # Create payment router
 payment_router = APIRouter()
 
-# Initialize BigQuery client
+# Initialize BigQuery client and managers
 bq_client = bigquery.Client()
+credit_manager = CreditManager()
+subscription_manager = SubscriptionManager()
 
 
 class ProductsResponse(BaseModel):
@@ -49,93 +61,10 @@ class CheckoutSessionResponse(BaseModel):
     session_id: str
 
 
-def determine_payment_type(product: stripe.Product) -> PaymentType:
-    """
-    Determine payment type from Stripe product metadata.
-
-    Args:
-        product: Stripe product object
-
-    Returns:
-        PaymentType: The determined payment type
-    """
-    # Check product metadata for type hints
-    metadata = product.metadata or {}
-
-    if "payment_type" in metadata:
-        try:
-            return PaymentType(metadata["payment_type"])
-        except ValueError:
-            pass
-
-    # Fallback logic based on product name/description
-    name_lower = product.name.lower()
-    description_lower = (product.description or "").lower()
-
-    if "credit" in name_lower or "credit" in description_lower:
-        return PaymentType.CREDIT_PURCHASE
-    elif "premium" in name_lower or "feature" in name_lower:
-        return PaymentType.FEATURE_UNLOCK
-    else:
-        return PaymentType.ONE_TIME
-
-
-async def fetch_products_from_stripe() -> List[ProductInfo]:
-    """
-    Fetch products directly from Stripe API.
-
-    Returns:
-        List[ProductInfo]: List of available products
-    """
-    try:
-        logger.info("Fetching products from Stripe...")
-
-        # Fetch active products from Stripe
-        stripe_products = stripe.Product.list(active=True, limit=100)
-        products = []
-
-        for product in stripe_products.data:
-            # Get prices for this product
-            prices = stripe.Price.list(product=product.id, active=True)
-
-            for price in prices.data:
-                # Only include one-time prices (not recurring subscriptions)
-                if price.type == "one_time":
-                    # Determine payment type from product metadata
-                    payment_type = determine_payment_type(product)
-
-                    products.append(
-                        ProductInfo(
-                            product_id=price.id,  # Use price ID as product ID for payments
-                            name=product.name,
-                            description=product.description or "",
-                            price=price.unit_amount,
-                            currency=price.currency,
-                            type=payment_type,
-                        )
-                    )
-
-        logger.info(f"Retrieved {len(products)} products from Stripe")
-        return products
-
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe API error: {str(e)}\n{format_exc()}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to fetch products from Stripe",
-        )
-    except Exception as e:
-        logger.error(f"Failed to fetch products from Stripe: {str(e)}\n{format_exc()}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve products",
-        )
-
-
 @payment_router.get("/products", response_model=ProductsResponse)
 async def get_products() -> ProductsResponse:
     """Get available products for purchase directly from Stripe."""
-    products = await fetch_products_from_stripe()
+    products = await fetch_products()
     return ProductsResponse(data=products)
 
 
@@ -144,10 +73,10 @@ async def create_checkout_session(
     request: CheckoutSessionRequest,
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> CheckoutSessionResponse:
-    """Create a Stripe Checkout session for web payments."""
+    """Create a Stripe Checkout session for both one-time and subscription payments."""
     try:
         # Get all available products from Stripe
-        products = await fetch_products_from_stripe()
+        products = await fetch_products()
 
         # Validate product exists
         product = next(
@@ -156,16 +85,23 @@ async def create_checkout_session(
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
 
+        # Determine checkout mode based on payment type
+        checkout_mode = (
+            "subscription" if product.type == ProductType.SUBSCRIPTION else "payment"
+        )
+
         # Create checkout session
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[
                 {
                     "price": request.product_id,  # This is the Stripe price ID
-                    "quantity": request.quantity,
+                    "quantity": request.quantity
+                    if product.type == ProductType.BONUS
+                    else 1,
                 }
             ],
-            mode="payment",
+            mode=checkout_mode,
             success_url=request.success_url + "?session_id={CHECKOUT_SESSION_ID}",
             cancel_url=request.cancel_url,
             client_reference_id=current_user.username,
@@ -177,23 +113,24 @@ async def create_checkout_session(
             },
         )
 
-        # Store payment record in database
-        payment_id = str(uuid.uuid4())
-        await store_payment_record(
-            payment_id=payment_id,
-            user_id=current_user.username,
-            stripe_payment_intent_id=checkout_session.id,
-            amount=product.price * request.quantity,
-            currency=product.currency,
-            status=PaymentStatus.PENDING,
-            payment_type=product.type,
-            product_id=request.product_id,
-            quantity=request.quantity,
-            description=product.description,
-        )
+        # Store payment record for one-time payments
+        if product.type == ProductType.BONUS:
+            payment_id = str(uuid.uuid4())
+            await store_payment_record(
+                payment_id=payment_id,
+                user_id=current_user.username,
+                stripe_payment_intent_id=checkout_session.id,
+                amount=product.price * request.quantity,
+                currency=product.currency,
+                status=PaymentStatus.PENDING,
+                product_type=product.type,
+                product_id=request.product_id,
+                quantity=request.quantity,
+                description=product.description,
+            )
 
         logger.info(
-            f"Created checkout session {checkout_session.id} for user {current_user.username}"
+            f"Created {checkout_mode} checkout session {checkout_session.id} for user {current_user.username}"
         )
 
         return CheckoutSessionResponse(
@@ -215,12 +152,68 @@ async def create_checkout_session(
         )
 
 
+@payment_router.get("/credits", response_model=CreditBalanceResponse)
+async def get_user_credits(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> CreditBalanceResponse:
+    """Get user's credit balance."""
+    credits = await credit_manager.get_credits(current_user.username)
+    if not credits:
+        # Initialize credits for new user
+        await credit_manager._ensure_user_credit_record(current_user.username)
+        credits = await credit_manager.get_credits(current_user.username)
+
+    return CreditBalanceResponse(
+        user_id=credits.user_id,
+        balance=credits.balance,
+        total_earned=credits.total_earned,
+        total_spent=credits.total_spent,
+        last_updated=credits.last_updated,
+    )
+
+
+@payment_router.get("/credits/transactions")
+async def get_credit_transactions(
+    current_user: Annotated[User, Depends(get_current_user)],
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Get user's credit transaction history."""
+    transactions = await credit_manager.get_credit_transactions(
+        current_user.username, limit, offset
+    )
+    return {"transactions": transactions}
+
+
+@payment_router.get("/subscriptions", response_model=UserSubscriptionResponse)
+async def get_user_subscriptions(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> UserSubscriptionResponse:
+    """Get user's subscription information."""
+    return await subscription_manager.get_subscriptions(current_user.username)
+
+
+@payment_router.post("/subscriptions/{subscription_id}/cancel")
+async def cancel_subscription(
+    subscription_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Cancel a user's subscription."""
+    success = await subscription_manager.cancel_subscription(
+        current_user.username, subscription_id
+    )
+    if success:
+        return {"message": "Subscription cancelled successfully"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+
+
 @payment_router.post("/webhook")
 async def handle_stripe_webhook(
     request: Request,
     stripe_signature: Annotated[str, Header(alias="stripe-signature")],
 ):
-    """Handle Stripe webhook events."""
+    """Handle Stripe webhook events for payments and subscriptions."""
     try:
         # Get request body
         body = await request.body()
@@ -237,10 +230,19 @@ async def handle_stripe_webhook(
             logger.error("Invalid signature in webhook")
             raise HTTPException(status_code=400, detail="Invalid signature")
 
-        # Handle the event
+        # Handle different event types
         if event["type"] == "checkout.session.completed":
             checkout_session = event["data"]["object"]
-            await handle_checkout_success(checkout_session)
+            if checkout_session["mode"] == "subscription":
+                await handle_subscription_checkout_success(checkout_session)
+            else:
+                await handle_bonus_checkout_success(checkout_session)
+        elif event["type"] == "invoice.payment_succeeded":
+            await handle_invoice_payment_succeeded(event["data"]["object"])
+        elif event["type"] == "customer.subscription.updated":
+            await handle_subscription_updated(event["data"]["object"])
+        elif event["type"] == "customer.subscription.deleted":
+            await handle_subscription_canceled(event["data"]["object"])
         else:
             logger.info(f"Unhandled event type: {event['type']}")
 
@@ -296,7 +298,7 @@ async def get_payment_history(
                     amount=row.amount,
                     currency=row.currency,
                     status=PaymentStatus(row.status),
-                    payment_type=PaymentType(row.payment_type),
+                    product_type=ProductType(row.product_type),
                     product_id=row.product_id,
                     quantity=row.quantity,
                     description=row.description,
@@ -341,7 +343,7 @@ async def store_payment_record(
     amount: int,
     currency: str,
     status: PaymentStatus,
-    payment_type: PaymentType,
+    product_type: ProductType,
     product_id: str,
     quantity: int,
     description: str = None,
@@ -350,12 +352,12 @@ async def store_payment_record(
     query = """
     INSERT INTO `bai-buchai-p.payments.records` (
         payment_id, user_id, stripe_payment_intent_id, amount, currency,
-        status, payment_type, product_id, quantity, description,
+        status, product_type, product_id, quantity, description,
         created_at, updated_at
     )
     VALUES (
         @payment_id, @user_id, @stripe_payment_intent_id, @amount, @currency,
-        @status, @payment_type, @product_id, @quantity, @description,
+        @status, @product_type, @product_id, @quantity, @description,
         CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP()
     )
     """
@@ -370,7 +372,7 @@ async def store_payment_record(
             bigquery.ScalarQueryParameter("amount", "INT64", amount),
             bigquery.ScalarQueryParameter("currency", "STRING", currency),
             bigquery.ScalarQueryParameter("status", "STRING", status.value),
-            bigquery.ScalarQueryParameter("payment_type", "STRING", payment_type.value),
+            bigquery.ScalarQueryParameter("product_type", "STRING", product_type.value),
             bigquery.ScalarQueryParameter("product_id", "STRING", product_id),
             bigquery.ScalarQueryParameter("quantity", "INT64", quantity),
             bigquery.ScalarQueryParameter("description", "STRING", description),
@@ -410,8 +412,8 @@ async def update_payment_status(
     query_job.result()
 
 
-async def handle_checkout_success(checkout_session: dict) -> None:
-    """Handle successful checkout session."""
+async def handle_bonus_checkout_success(checkout_session: dict) -> None:
+    """Handle successful one-time payment checkout session."""
     try:
         # Update payment status using checkout session ID
         await update_payment_status(
@@ -426,14 +428,94 @@ async def handle_checkout_success(checkout_session: dict) -> None:
         product_type = metadata.get("product_type")
 
         logger.info(
-            f"Checkout successful for user {user_id}, product {product_id}, quantity {quantity}, product type {product_type}"
+            f"One-time payment successful for user {user_id}, product {product_id}, quantity {quantity}"
         )
 
-        # TODO: Implement product-specific logic
-        # For example:
-        # - Add credits to user account
-        # - Unlock premium features
-        # - Grant access to specific content
+        # For bonus payments, add credits immediately
+        if product_type == ProductType.BONUS.value:
+            # Calculate credits based on Stripe metadata
+            credit_amount = get_credits_for_bonus_purchase(product_id, quantity)
+            await credit_manager.add_credits(
+                user_id,
+                credit_amount,
+                CreditTransactionType.EARNED_BONUS,
+                "Credits from bonus purchase",
+                checkout_session["id"],
+            )
 
     except Exception as e:
         logger.error(f"Failed to handle checkout success: {str(e)}\n{format_exc()}")
+
+
+async def handle_subscription_checkout_success(checkout_session: dict) -> None:
+    """Handle successful subscription checkout session."""
+    try:
+        subscription_id = checkout_session["subscription"]
+        user_id = checkout_session["client_reference_id"]
+
+        # Get plan name from Stripe subscription
+        plan_name = get_subscription_plan_name(subscription_id)
+
+        await subscription_manager.create_subscription(
+            user_id, subscription_id, plan_name
+        )
+
+        logger.info(f"Created subscription for user {user_id}")
+
+    except Exception as e:
+        logger.error(
+            f"Failed to handle subscription checkout: {str(e)}\n{format_exc()}"
+        )
+
+
+async def handle_invoice_payment_succeeded(invoice: dict) -> None:
+    """Handle successful recurring payment (monthly subscription renewal)."""
+    try:
+        subscription_id = invoice["subscription"]
+
+        # Process subscription renewal and grant monthly credits
+        await subscription_manager.process_subscription_renewal(subscription_id)
+
+        logger.info(f"Processed invoice payment for subscription {subscription_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to handle invoice payment: {str(e)}\n{format_exc()}")
+
+
+async def handle_subscription_updated(subscription: dict) -> None:
+    """Handle subscription status updates."""
+    try:
+        from app.models.payment import SubscriptionStatus
+
+        stripe_subscription_id = subscription["id"]
+        status = SubscriptionStatus(subscription["status"])
+
+        await subscription_manager.update_subscription_status(
+            stripe_subscription_id, status
+        )
+
+        logger.info(
+            f"Updated subscription {stripe_subscription_id} status to {status.value}"
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to handle subscription update: {str(e)}\n{format_exc()}")
+
+
+async def handle_subscription_canceled(subscription: dict) -> None:
+    """Handle subscription cancellation."""
+    try:
+        from app.models.payment import SubscriptionStatus
+
+        stripe_subscription_id = subscription["id"]
+
+        await subscription_manager.update_subscription_status(
+            stripe_subscription_id, SubscriptionStatus.CANCELED
+        )
+
+        logger.info(f"Cancelled subscription {stripe_subscription_id}")
+
+    except Exception as e:
+        logger.error(
+            f"Failed to handle subscription cancellation: {str(e)}\n{format_exc()}"
+        )
