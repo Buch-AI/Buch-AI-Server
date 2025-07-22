@@ -138,14 +138,20 @@ jobs:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
           terraform import google_bigquery_dataset.creations projects/bai-buchai-p/datasets/creations || true
+          terraform import google_bigquery_dataset.credits projects/bai-buchai-p/datasets/credits || true
+          terraform import google_bigquery_dataset.payments projects/bai-buchai-p/datasets/payments || true
           terraform import google_bigquery_dataset.tasks projects/bai-buchai-p/datasets/tasks || true
           terraform import google_bigquery_dataset.users projects/bai-buchai-p/datasets/users || true
-          terraform import google_bigquery_table.creations_profiles projects/bai-buchai-p/datasets/creations/tables/profiles || true
           terraform import google_bigquery_table.creations_cost_centres projects/bai-buchai-p/datasets/creations/tables/cost_centres || true
+          terraform import google_bigquery_table.creations_profiles projects/bai-buchai-p/datasets/creations/tables/profiles || true
+          terraform import google_bigquery_table.credits_transactions projects/bai-buchai-p/datasets/credits/tables/transactions || true
+          terraform import google_bigquery_table.payments_records projects/bai-buchai-p/datasets/payments/tables/records || true
           terraform import google_bigquery_table.tasks_video_generator projects/bai-buchai-p/datasets/tasks/tables/video_generator || true
           terraform import google_bigquery_table.users_auth projects/bai-buchai-p/datasets/users/tables/auth || true
-          terraform import google_bigquery_table.users_profiles projects/bai-buchai-p/datasets/users/tables/profiles || true
+          terraform import google_bigquery_table.users_credits projects/bai-buchai-p/datasets/users/tables/credits || true
           terraform import google_bigquery_table.users_geolocation projects/bai-buchai-p/datasets/users/tables/geolocation || true
+          terraform import google_bigquery_table.users_profiles projects/bai-buchai-p/datasets/users/tables/profiles || true
+          terraform import google_bigquery_table.users_subscriptions projects/bai-buchai-p/datasets/users/tables/subscriptions || true
           terraform import google_storage_bucket.creations bai-buchai-p-stb-usea1-creations || true
           terraform import google_cloud_run_service.server us-east1/bai-buchai-p/bai-buchai-p-run-usea1-server || true
           terraform import google_cloud_run_v2_job.video_generator projects/bai-buchai-p/locations/us-east1/jobs/bai-buchai-p-crj-usea1-vidgen || true
