@@ -155,6 +155,8 @@ jobs:
           # Import Firestore databases (replaces BigQuery datasets and tables)
           terraform import google_firestore_database.main projects/bai-buchai-p/databases/\(default\) || true
           terraform import google_firestore_database.development projects/bai-buchai-p/databases/development || true
+          # Import Firestore rules document
+          terraform import google_firestore_document.security_rules projects/bai-buchai-p/databases/\(default\)/documents/_firestore/rules || true
           # Import other existing cloud resources
           terraform import google_storage_bucket.creations bai-buchai-p-stb-usea1-creations || true
           terraform import google_cloud_run_service.server us-east1/bai-buchai-p/bai-buchai-p-run-usea1-server || true
