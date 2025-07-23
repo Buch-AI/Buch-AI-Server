@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from app.models.cost_centre import CostCentreManager
 from app.models.firestore import CreationProfile as FirestoreCreationProfile
-from app.models.firestore import TaskVideoGenerator as FirestoreTaskVideoGenerator
+from app.models.firestore import VideoGeneratorTask as FirestoreTaskVideoGenerator
 from app.server.routers.auth_routes import User, get_current_user
 from app.services.firestore_service import get_firestore_service
 from app.tasks.video_generator.main import VideoGenerator
