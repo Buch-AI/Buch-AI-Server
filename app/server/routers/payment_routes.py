@@ -13,7 +13,6 @@ from app.models.payment import (
     CreditBalanceResponse,
     CreditTransactionType,
     PaymentHistoryResponse,
-    PaymentRecord,
     PaymentStatus,
     ProductInfo,
     ProductType,
@@ -268,35 +267,22 @@ async def get_payment_history(
     """Get payment history for the current user."""
     try:
         # Query payments from Firestore
+        # NOTE: Removed order_by to avoid index requirement, will sort in Python if needed
         firestore_payments = await firestore_service.query_collection(
             collection_name="payments_records",
             filters=[("user_id", "==", current_user.username)],
-            order_by="created_at",
             limit=limit,
             offset=offset,
             model_class=FirestorePaymentRecord,
         )
 
-        # Convert Firestore models to API models
-        payments = []
-        for fp in firestore_payments:
-            payments.append(
-                PaymentRecord(
-                    payment_id=fp.payment_id,
-                    user_id=fp.user_id,
-                    stripe_payment_intent_id=fp.stripe_payment_intent_id,
-                    amount=fp.amount,
-                    currency=fp.currency,
-                    status=PaymentStatus(fp.status),
-                    product_type=ProductType(fp.product_type),
-                    product_id=fp.product_id,
-                    quantity=fp.quantity,
-                    description=fp.description,
-                    created_at=fp.created_at,
-                    updated_at=fp.updated_at,
-                    completed_at=fp.completed_at,
-                )
-            )
+        # Sort by created_at in Python (temporary solution until index is created)
+        firestore_payments.sort(
+            key=lambda x: x.created_at or datetime.min, reverse=True
+        )
+
+        # Since both models now inherit from the same base, we can use the Firestore models directly
+        payments = firestore_payments
 
         # Get total count
         total_count = await firestore_service.count_documents(

@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from traceback import format_exc
 from typing import Annotated, List
 
@@ -32,31 +33,20 @@ async def get_user_creations(
 
     try:
         # Query user's creations from Firestore
+        # NOTE: Removed order_by to avoid index requirement, sorting in Python instead
         firestore_creations = await firestore_service.query_collection(
             collection_name="creations_profiles",
             filters=[("user_id", "==", current_user.username)],
-            order_by="created_at",
             model_class=FirestoreCreationProfile,
         )
 
-        # Convert Firestore models to API models
-        creations = []
-        for fc in firestore_creations:
-            creation = CreationProfile(
-                creation_id=fc.creation_id,
-                title=fc.title,
-                description=fc.description,
-                creator_id=fc.creator_id,
-                user_id=fc.user_id,
-                created_at=fc.created_at,
-                updated_at=fc.updated_at,
-                status=fc.status,
-                visibility=fc.visibility,
-                tags=fc.tags,
-                metadata=fc.metadata,
-                is_active=fc.is_active,
-            )
-            creations.append(creation)
+        # Sort by created_at in Python (temporary solution until index is created)
+        firestore_creations.sort(
+            key=lambda x: x.created_at or datetime.min, reverse=True
+        )
+
+        # Since both models now inherit from the same base, we can use the Firestore models directly
+        creations = firestore_creations
 
         return CreationsResponse(data=creations)
 

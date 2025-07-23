@@ -68,7 +68,7 @@ resource "google_cloud_run_v2_job" "video_generator" {
 }
 
 # Import Firestore configuration
-# Note: BigQuery resources have been replaced with Firestore
+# NOTE: BigQuery resources have been replaced with Firestore
 # See firestore.tf for the new database configuration
 
 # Google Cloud Firestore (see firestore.tf)

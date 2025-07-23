@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from firebase_admin import firestore, initialize_app
-from google.cloud.firestore import Client, DocumentReference
+from google.cloud.firestore import Client, DocumentReference, FieldFilter
 
 from app.models.firestore import (
     COLLECTION_MODELS,
@@ -36,14 +36,10 @@ class FirestoreService:
     Firestore operations, maintaining the same interface where possible.
     """
 
-    def __init__(self, database_name: str = "(default)"):
+    def __init__(self):
         """
         Initialize the Firestore service.
-
-        Args:
-            database_name: Name of the Firestore database to connect to
         """
-        self.database_name = database_name
         self._client: Optional[Client] = None
 
     @property
@@ -60,8 +56,8 @@ class FirestoreService:
 
                 app = firebase_admin.get_app()
 
-            # Get Firestore client for specified database
-            self._client = firestore.client(app, database=self.database_name)
+            # Get Firestore client (using default database)
+            self._client = firestore.client(app)
 
         return self._client
 
@@ -238,10 +234,10 @@ class FirestoreService:
         try:
             query = self.get_collection_ref(collection_name)
 
-            # Apply filters
+            # Apply filters using the newer filter syntax to avoid deprecation warnings
             if filters:
                 for field, operator, value in filters:
-                    query = query.where(field, operator, value)
+                    query = query.where(filter=FieldFilter(field, operator, value))
 
             # Apply ordering
             if order_by:
@@ -274,8 +270,22 @@ class FirestoreService:
             return results
 
         except Exception as e:
-            logger.error(f"Failed to query collection {collection_name}: {str(e)}")
-            raise
+            error_message = str(e)
+            if "query requires an index" in error_message:
+                logger.error(
+                    f"Firestore index required for query on {collection_name}. "
+                    f"Create the index using the link in the error message: {error_message}"
+                )
+                # Re-raise with a more user-friendly message
+                raise Exception(
+                    "Database query requires an index to be created. "
+                    "Please contact system administrator."
+                ) from e
+            else:
+                logger.error(
+                    f"Failed to query collection {collection_name}: {error_message}"
+                )
+                raise
 
     async def get_user_documents(
         self,
@@ -320,10 +330,10 @@ class FirestoreService:
         try:
             query = self.get_collection_ref(collection_name)
 
-            # Apply filters
+            # Apply filters using the newer filter syntax to avoid deprecation warnings
             if filters:
                 for field, operator, value in filters:
-                    query = query.where(field, operator, value)
+                    query = query.where(filter=FieldFilter(field, operator, value))
 
             # Execute count query
             return len(list(query.stream()))
@@ -347,17 +357,14 @@ class FirestoreService:
 _firestore_service = None
 
 
-def get_firestore_service(database_name: str = "(default)") -> FirestoreService:
+def get_firestore_service() -> FirestoreService:
     """
     Get a singleton Firestore service instance.
-
-    Args:
-        database_name: Name of the Firestore database
 
     Returns:
         FirestoreService instance
     """
     global _firestore_service
     if _firestore_service is None:
-        _firestore_service = FirestoreService(database_name)
+        _firestore_service = FirestoreService()
     return _firestore_service

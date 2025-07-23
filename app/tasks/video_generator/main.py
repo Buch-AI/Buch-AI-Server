@@ -649,7 +649,7 @@ class VideoGenerator:
         Returns:
             bytes: The generated video as bytes
 
-        Note:
+        NOTE:
             This function includes a zoom-in effect on images. The zoom settings are configured
             as constants within the function and can be modified in the source code if needed.
         """

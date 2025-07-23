@@ -130,7 +130,7 @@ def test_service_initialization():
         from app.services.image.pollinations_ai import PollinationsAiRouterService
         from app.services.llm.vertex_ai import VertexAiRouterService
 
-        # Note: We're not actually calling the services, just checking they can be imported and instantiated
+        # NOTE: We're not actually calling the services, just checking they can be imported and instantiated
         VertexAiRouterService()
         PollinationsAiRouterService()
 

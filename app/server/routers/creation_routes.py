@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from io import BytesIO
 from traceback import format_exc
-from typing import Annotated, Dict, List, Optional
+from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import run_v2, storage
@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.models.cost_centre import CostCentreManager
 from app.models.firestore import CreationProfile as FirestoreCreationProfile
 from app.models.firestore import VideoGeneratorTask as FirestoreTaskVideoGenerator
+from app.models.shared import BaseCreationProfile
 from app.server.routers.auth_routes import User, get_current_user
 from app.services.firestore_service import get_firestore_service
 from app.tasks.video_generator.main import VideoGenerator
@@ -36,21 +37,8 @@ class ImageDataRequest(BaseModel):
     data: str
 
 
-class CreationProfile(BaseModel):
-    """Model representing a creation profile."""
-
-    creation_id: str
-    title: str
-    description: Optional[str] = None
-    creator_id: str
-    user_id: str
-    created_at: datetime
-    updated_at: datetime
-    status: str  # draft, published, archived
-    visibility: str  # public, private
-    tags: List[str]
-    metadata: Optional[Dict] = None
-    is_active: bool
+# Use the shared base model for API responses
+CreationProfile = BaseCreationProfile
 
 
 class CreationProfileUpdate(BaseModel):
@@ -379,10 +367,10 @@ async def generate_video_status(
             firestore_service = get_firestore_service()
 
             # Get the task record from Firestore
+            # NOTE: Removed order_by to avoid index requirement for now
             tasks = await firestore_service.query_collection(
                 collection_name="tasks_video_generator",
                 filters=[("creation_id", "==", creation_id)],
-                order_by="created_at",
                 limit=1,
                 model_class=FirestoreTaskVideoGenerator,
             )

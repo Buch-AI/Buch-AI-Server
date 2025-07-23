@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 from app.models.firestore import UserAuth
 from app.models.geolocation import GeolocationProcessor
@@ -50,6 +50,19 @@ class User(BaseModel):
 
 class UserInDB(User):
     hashed_password: str
+
+
+class UserRegistrationRequest(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+
+
+class UserRegistrationResponse(BaseModel):
+    message: str
+    user_id: str
+    username: str
+    email: str
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -317,6 +330,86 @@ async def refresh_access_token(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to refresh token",
+        )
+
+
+@auth_router.post("/register", response_model=UserRegistrationResponse)
+async def register_user(user_data: UserRegistrationRequest):
+    """
+    Register a new user.
+
+    This endpoint allows users to create a new account.
+
+    Args:
+        user_data: User registration data (username, email, password)
+
+    Returns:
+        UserRegistrationResponse: Success message and user details
+
+    Raises:
+        HTTPException: If username or email is already in use
+    """
+    try:
+        # Check if username or email is already in use
+        existing_users_by_username = await firestore_service.query_collection(
+            collection_name="users_auth",
+            filters=[("username", "==", user_data.username)],
+            limit=1,
+            model_class=UserAuth,
+        )
+        if existing_users_by_username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already in use",
+            )
+
+        existing_users_by_email = await firestore_service.query_collection(
+            collection_name="users_auth",
+            filters=[("email", "==", user_data.email)],
+            limit=1,
+            model_class=UserAuth,
+        )
+        if existing_users_by_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already in use",
+            )
+
+        # Generate unique user ID
+        user_id = user_data.email  # Using email as user_id for consistency
+
+        # Create new user document data
+        user_document_data = {
+            "user_id": user_id,
+            "username": user_data.username,
+            "email": user_data.email,
+            "password_hash": get_password_hash(user_data.password),
+            "is_active": True,
+            "roles": [],
+            "created_at": datetime.utcnow(),
+            "last_login": None,
+        }
+
+        # Create the document with user_id as document ID
+        _ = await firestore_service.create_document(
+            collection_name="users_auth",
+            document_data=user_document_data,
+            document_id=user_id,
+        )
+
+        logger.info(f"User registered successfully: {user_data.username}")
+        return UserRegistrationResponse(
+            message="User registered successfully",
+            user_id=user_id,
+            username=user_data.username,
+            email=user_data.email,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to register user: {str(e)}\n{format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to register user",
         )
 
 

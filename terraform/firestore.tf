@@ -1,6 +1,6 @@
 # Google Cloud Firestore Database
 # Replace BigQuery datasets with a single Firestore database
-# Note: Firestore uses collections (not datasets) and documents (not tables)
+# NOTE: Firestore uses collections (not datasets) and documents (not tables)
 
 resource "google_firestore_database" "main" {
   project     = "bai-buchai-p"
@@ -22,7 +22,7 @@ resource "google_firestore_database" "development" {
   delete_protection_state = "DELETE_PROTECTION_DISABLED"
 }
 
-# Note: Collections in Firestore are created automatically when documents are added
+# NOTE: Collections in Firestore are created automatically when documents are added
 # The equivalent collections for your BigQuery tables will be:
 #
 # BigQuery Datasets/Tables -> Firestore Collections:

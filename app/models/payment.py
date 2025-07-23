@@ -4,6 +4,13 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from app.models.shared import (
+    BaseCreditTransaction,
+    BasePaymentRecord,
+    BaseUserCredits,
+    BaseUserSubscription,
+)
+
 
 class PaymentStatus(str, Enum):
     """Payment status enumeration."""
@@ -41,26 +48,8 @@ class CreditTransactionType(str, Enum):
     SPENT = "spent"
 
 
-class PaymentRecord(BaseModel):
-    """
-    Payment record model for database storage.
-
-    Corresponds to BigQuery table: `bai-buchai-p.payments.records`
-    """
-
-    payment_id: str
-    user_id: str
-    stripe_payment_intent_id: str
-    amount: int
-    currency: str
-    status: PaymentStatus
-    product_type: ProductType
-    product_id: str
-    quantity: int
-    description: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-    completed_at: Optional[datetime] = None
+# Use the shared base model for API responses
+PaymentRecord = BasePaymentRecord
 
 
 class PaymentHistoryResponse(BaseModel):
@@ -81,55 +70,16 @@ class ProductInfo(BaseModel):
     type: ProductType
 
 
-class CreditBalance(BaseModel):
-    """
-    User credit balance model.
-
-    Corresponds to BigQuery table: `bai-buchai-p.users.credits`
-    """
-
-    user_id: str
-    balance: int
-    total_earned: int
-    total_spent: int
-    last_updated: datetime
-    created_at: datetime
+# Use the shared base model for API responses
+CreditBalance = BaseUserCredits
 
 
-class CreditTransaction(BaseModel):
-    """
-    Credit transaction model.
-
-    Corresponds to BigQuery table: `bai-buchai-p.credits.transactions`
-    """
-
-    transaction_id: str
-    user_id: str
-    type: CreditTransactionType
-    amount: int
-    description: Optional[str] = None
-    reference_id: Optional[str] = None
-    created_at: datetime
+# Use the shared base model for API responses
+CreditTransaction = BaseCreditTransaction
 
 
-class SubscriptionRecord(BaseModel):
-    """
-    Subscription record model.
-
-    Corresponds to BigQuery table: `bai-buchai-p.users.subscriptions`
-    """
-
-    subscription_id: str
-    user_id: str
-    stripe_subscription_id: str
-    plan_name: str
-    status: SubscriptionStatus
-    credits_monthly: int
-    current_period_start: datetime
-    current_period_end: datetime
-    cancel_at_period_end: bool = False
-    created_at: datetime
-    updated_at: datetime
+# Use the shared base model for API responses
+SubscriptionRecord = BaseUserSubscription
 
 
 class CreditBalanceResponse(BaseModel):

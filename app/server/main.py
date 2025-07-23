@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.server.routers.auth_routes import auth_router
 from app.server.routers.creation_routes import creation_router
-from app.server.routers.database_routes import database_router
 from app.server.routers.image_routes import image_router
 from app.server.routers.llm_routes import llm_router
 from app.server.routers.me_routes import me_router
@@ -38,7 +37,6 @@ def root():
 # Include the routers in the main app with a prefix
 app.include_router(auth_router, prefix="/auth")
 app.include_router(me_router, prefix="/me")
-app.include_router(database_router, prefix="/database")
 app.include_router(creation_router, prefix="/creation")
 app.include_router(llm_router, prefix="/llm")
 app.include_router(image_router, prefix="/image")
