@@ -4,5 +4,4 @@ gcp_region     = "us-east1"
 server_image_tag = "{{SERVER_IMAGE_TAG}}"
 vidgen_image_tag = "{{VIDGEN_IMAGE_TAG}}"
 
-auth_jwt_key = "{{AUTH_JWT_KEY}}"
-hf_api_key   = "{{HF_API_KEY}}" 
+buchai_env = "{{BUCHAI_ENV}}"

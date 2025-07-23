@@ -19,14 +19,8 @@ variable "vidgen_image_tag" {
   description = "The Docker image tag for the Buch AI Video Generator"
 }
 
-variable "auth_jwt_key" {
+variable "buchai_env" {
   type        = string
-  description = "The JWT key for authentication"
-  sensitive   = true
-}
-
-variable "hf_api_key" {
-  type        = string
-  description = "The Hugging Face API key"
+  description = "The environment override for the Buch AI Server"
   sensitive   = true
 }

@@ -24,12 +24,7 @@ resource "google_cloud_run_service" "server" {
 
         env {
           name  = "AUTH_JWT_KEY"
-          value = var.auth_jwt_key
-        }
-
-        env {
-          name  = "HF_API_KEY"
-          value = var.hf_api_key
+          value = var.buchai_env
         }
       }
     }
