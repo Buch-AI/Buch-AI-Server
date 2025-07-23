@@ -3,11 +3,12 @@ from traceback import format_exc
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException
-from google.cloud import bigquery
 from pydantic import BaseModel
 
+from app.models.firestore import CreationProfile as FirestoreCreationProfile
 from app.server.routers.auth_routes import User, get_current_user
 from app.server.routers.creation_routes import CreationProfile
+from app.services.firestore_service import get_firestore_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,43 +27,34 @@ async def get_user_creations(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> CreationsResponse:
     """Get all creations for the current user."""
-    # Initialize BigQuery client
-    client = bigquery.Client()
+    # Initialize Firestore service
+    firestore_service = get_firestore_service()
 
     try:
-        query = """
-        SELECT *
-        FROM `bai-buchai-p.creations.profiles`
-        WHERE user_id = @user_id
-        ORDER BY created_at DESC
-        """
-
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter(
-                    "user_id", "STRING", current_user.username
-                )
-            ]
+        # Query user's creations from Firestore
+        firestore_creations = await firestore_service.query_collection(
+            collection_name="creations_profiles",
+            filters=[("user_id", "==", current_user.username)],
+            order_by="created_at",
+            model_class=FirestoreCreationProfile,
         )
 
-        query_job = client.query(query, job_config=job_config)
-        results = query_job.result()
-
+        # Convert Firestore models to API models
         creations = []
-        for row in results:
+        for fc in firestore_creations:
             creation = CreationProfile(
-                creation_id=row.creation_id,
-                title=row.title,
-                description=row.description,
-                creator_id=row.creator_id,
-                user_id=row.user_id,
-                created_at=row.created_at,
-                updated_at=row.updated_at,
-                status=row.status,
-                visibility=row.visibility,
-                tags=row.tags,
-                metadata=row.metadata,
-                is_active=row.is_active,
+                creation_id=fc.creation_id,
+                title=fc.title,
+                description=fc.description,
+                creator_id=fc.creator_id,
+                user_id=fc.user_id,
+                created_at=fc.created_at,
+                updated_at=fc.updated_at,
+                status=fc.status,
+                visibility=fc.visibility,
+                tags=fc.tags,
+                metadata=fc.metadata,
+                is_active=fc.is_active,
             )
             creations.append(creation)
 

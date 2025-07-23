@@ -1,9 +1,13 @@
 import logging
 import uuid
+from datetime import datetime
 from traceback import format_exc
 
 from fastapi import HTTPException
-from google.cloud import bigquery
+
+from app.models.firestore import CostCentre as FirestoreCostCentre
+from app.models.firestore import CreationProfile as FirestoreCreationProfile
+from app.services.firestore_service import get_firestore_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -17,26 +21,17 @@ class CostCentreManager:
         user_id: str,
     ) -> str:
         """Generate a new cost centre for a specific creation."""
-        # Initialize clients
-        bigquery_client = bigquery.Client()
+        # Initialize Firestore service
+        firestore_service = get_firestore_service()
 
         # First, verify the creation belongs to the user
-        verify_query = """
-        SELECT creation_id
-        FROM `bai-buchai-p.creations.profiles`
-        WHERE creation_id = @creation_id
-        AND user_id = @user_id
-        """
-
-        verify_job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-            ]
+        creation = await firestore_service.get_document(
+            collection_name="creations_profiles",
+            document_id=creation_id,
+            model_class=FirestoreCreationProfile,
         )
 
-        verify_job = bigquery_client.query(verify_query, verify_job_config)
-        if not list(verify_job.result()):
+        if not creation or creation.user_id != user_id:
             logger.error(
                 f"Creation {creation_id} not found or unauthorized\n{format_exc()}"
             )
@@ -48,32 +43,21 @@ class CostCentreManager:
         # Generate a unique cost centre ID
         cost_centre_id = str(uuid.uuid4())
 
-        # Insert the cost centre
-        query = """
-        INSERT INTO `bai-buchai-p.creations.cost_centres` (
-            cost_centre_id, creation_id, user_id, created_at, cost
-        )
-        VALUES (
-            @cost_centre_id,
-            @creation_id,
-            @user_id,
-            CURRENT_TIMESTAMP(),
-            0
-        )
-        """
+        # Create the cost centre data
+        cost_centre_data = {
+            "cost_centre_id": cost_centre_id,
+            "creation_id": creation_id,
+            "user_id": user_id,
+            "created_at": datetime.utcnow(),
+            "cost": 0.0,
+        }
 
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter(
-                    "cost_centre_id", "STRING", cost_centre_id
-                ),
-                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-            ]
+        # Insert the cost centre into Firestore
+        await firestore_service.create_document(
+            collection_name="creations_cost_centres",
+            document_data=cost_centre_data,
+            document_id=cost_centre_id,
         )
-
-        query_job = bigquery_client.query(query, job_config=job_config)
-        query_job.result()  # Wait for the query to complete
 
         return cost_centre_id
 
@@ -83,25 +67,23 @@ class CostCentreManager:
             return
 
         try:
-            bigquery_client = bigquery.Client()
-            query = """
-            UPDATE `bai-buchai-p.creations.cost_centres`
-            SET cost = cost + @additional_cost
-            WHERE cost_centre_id = @cost_centre_id
-            """
+            firestore_service = get_firestore_service()
 
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("additional_cost", "NUMERIC", cost),
-                    bigquery.ScalarQueryParameter(
-                        "cost_centre_id", "STRING", cost_centre_id
-                    ),
-                ]
+            # Get the current cost centre
+            cost_centre = await firestore_service.get_document(
+                collection_name="creations_cost_centres",
+                document_id=cost_centre_id,
+                model_class=FirestoreCostCentre,
             )
 
-            # Use query instead of query_async
-            query_job = bigquery_client.query(query, job_config=job_config)
-            query_job.result()  # Wait for the query to complete
+            if cost_centre:
+                # Update the cost by adding the additional cost
+                new_cost = cost_centre.cost + cost
+                await firestore_service.update_document(
+                    collection_name="creations_cost_centres",
+                    document_id=cost_centre_id,
+                    update_data={"cost": new_cost},
+                )
         except Exception as e:
             logging.error(f"Failed to update cost centre: {e}")
             # Don't raise exception to prevent disrupting the main flow
@@ -112,50 +94,25 @@ class CostCentreManager:
             return False
 
         try:
-            bigquery_client = bigquery.Client()
+            firestore_service = get_firestore_service()
 
             # First verify the cost centre belongs to the user
-            verify_query = """
-            SELECT cost_centre_id
-            FROM `bai-buchai-p.creations.cost_centres`
-            WHERE cost_centre_id = @cost_centre_id
-            AND user_id = @user_id
-            """
-
-            verify_job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter(
-                        "cost_centre_id", "STRING", cost_centre_id
-                    ),
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-                ]
+            cost_centre = await firestore_service.get_document(
+                collection_name="creations_cost_centres",
+                document_id=cost_centre_id,
+                model_class=FirestoreCostCentre,
             )
 
-            verify_job = bigquery_client.query(verify_query, verify_job_config)
-            if not list(verify_job.result()):
+            if not cost_centre or cost_centre.user_id != user_id:
                 logger.error(
                     f"Cost centre {cost_centre_id} not found or unauthorized\n{format_exc()}"
                 )
                 return False
 
-            # Delete the cost centre
-            delete_query = """
-            DELETE FROM `bai-buchai-p.creations.cost_centres`
-            WHERE cost_centre_id = @cost_centre_id
-            AND user_id = @user_id
-            """
-
-            delete_job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter(
-                        "cost_centre_id", "STRING", cost_centre_id
-                    ),
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-                ]
+            # Delete the cost centre from Firestore
+            await firestore_service.delete_document(
+                collection_name="creations_cost_centres", document_id=cost_centre_id
             )
-
-            delete_job = bigquery_client.query(delete_query, delete_job_config)
-            delete_job.result()  # Wait for the query to complete
 
             return True
         except Exception as e:

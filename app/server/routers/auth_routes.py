@@ -6,12 +6,13 @@ from typing import Annotated
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from google.cloud import bigquery
 from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
+from app.models.firestore import UserAuth
 from app.models.geolocation import GeolocationProcessor
+from app.services.firestore_service import get_firestore_service
 from config import AUTH_JWT_KEY
 
 # Configure logging
@@ -21,8 +22,8 @@ logger = logging.getLogger(__name__)
 # Create a router for authentication operations
 auth_router = APIRouter()
 
-# Google Cloud BigQuery client
-client = bigquery.Client()
+# Firestore service
+firestore_service = get_firestore_service()
 
 # JWT configuration
 ALGORITHM = "HS256"
@@ -64,26 +65,29 @@ def password_verified(plain_password, hashed_password):
 
 
 async def get_user_db_record(username: str):
-    query = """
-    SELECT user_id, username, email, password_hash, is_active
-    FROM `bai-buchai-p.users.auth`
-    WHERE username = @username
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ScalarQueryParameter("username", "STRING", username)]
-    )
-    query_job = client.query(query, job_config=job_config)
-    results = query_job.result()
-
-    for row in results:
-        return UserInDB(
-            user_id=row.user_id,
-            username=row.username,
-            email=row.email,
-            hashed_password=row.password_hash,
-            disabled=not row.is_active,
+    try:
+        # Query users by username using Firestore
+        users = await firestore_service.query_collection(
+            collection_name="users_auth",
+            filters=[("username", "==", username)],
+            limit=1,
+            model_class=UserAuth,
         )
-    return None
+
+        if users:
+            user = users[0]
+            return UserInDB(
+                user_id=user.user_id,
+                username=user.username,
+                email=user.email,
+                hashed_password=user.password_hash,
+                disabled=not user.is_active,
+            )
+        return None
+
+    except Exception as e:
+        logger.error(f"Failed to get user record for {username}: {str(e)}")
+        return None
 
 
 def get_client_ipv4(request: Request) -> str:
@@ -164,7 +168,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 async def update_last_login(user_id: str) -> bool:
     """
-    Update the last_login timestamp for a user in the database.
+    Update the last_login timestamp for a user in Firestore.
 
     Args:
         user_id: The ID of the user to update
@@ -173,18 +177,21 @@ async def update_last_login(user_id: str) -> bool:
         bool: True if update was successful, False otherwise
     """
     try:
-        query = """
-        UPDATE `bai-buchai-p.users.auth`
-        SET last_login = CURRENT_TIMESTAMP()
-        WHERE user_id = @user_id
-        """
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-            ]
+        # Get user to find the document by user_id field
+        users = await firestore_service.query_collection(
+            collection_name="users_auth",
+            filters=[("user_id", "==", user_id)],
+            limit=1,
+            model_class=UserAuth,
         )
-        query_job = client.query(query, job_config=job_config)
-        query_job.result()  # Wait for the job to complete
+
+        if users:
+            user = users[0]
+            await firestore_service.update_document(
+                collection_name="users_auth",
+                document_id=user.user_id,  # Assuming user_id is used as document ID
+                update_data={"last_login": datetime.utcnow()},
+            )
 
         return True
     except Exception as e:

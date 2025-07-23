@@ -1,0 +1,156 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Function to check if user owns the resource
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Cost Centres Collection
+    match /creations_cost_centres/{costCentreId} {
+      allow read, write: if isAuthenticated() && isOwner(resource.data.user_id);
+      allow create: if isAuthenticated() 
+        && request.resource.data.keys().hasAll(['cost_centre_id', 'creation_id', 'user_id', 'created_at', 'cost'])
+        && request.resource.data.cost_centre_id is string
+        && request.resource.data.creation_id is string 
+        && request.resource.data.user_id is string
+        && request.resource.data.created_at is timestamp
+        && request.resource.data.cost is number;
+    }
+    
+    // Creation Profiles Collection  
+    match /creations_profiles/{creationId} {
+      allow read, write: if isAuthenticated() && isOwner(resource.data.user_id);
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['creation_id', 'title', 'creator_id', 'user_id', 'created_at', 'updated_at', 'status', 'visibility', 'is_active'])
+        && request.resource.data.creation_id is string
+        && request.resource.data.title is string
+        && request.resource.data.creator_id is string
+        && request.resource.data.user_id is string
+        && request.resource.data.created_at is timestamp
+        && request.resource.data.updated_at is timestamp
+        && request.resource.data.status is string
+        && request.resource.data.visibility is string
+        && request.resource.data.is_active is bool;
+    }
+    
+    // Video Generator Tasks Collection
+    match /tasks_video_generator/{taskId} {
+      allow read, write: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['creation_id', 'execution_id', 'created_at', 'updated_at', 'status'])
+        && request.resource.data.creation_id is string
+        && request.resource.data.execution_id is string
+        && request.resource.data.created_at is timestamp
+        && request.resource.data.updated_at is timestamp
+        && request.resource.data.status is string;
+    }
+    
+    // User Auth Collection
+    match /users_auth/{userId} {
+      allow read, write: if isAuthenticated() && isOwner(userId);
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['user_id', 'username', 'email', 'password_hash', 'created_at', 'is_active'])
+        && request.resource.data.user_id is string
+        && request.resource.data.username is string
+        && request.resource.data.email is string
+        && request.resource.data.password_hash is string
+        && request.resource.data.created_at is timestamp
+        && request.resource.data.is_active is bool;
+    }
+    
+    // User Profiles Collection
+    match /users_profiles/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isOwner(userId);
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['user_id', 'display_name', 'email', 'created_at', 'updated_at', 'is_active'])
+        && request.resource.data.user_id is string
+        && request.resource.data.display_name is string
+        && request.resource.data.email is string
+        && request.resource.data.created_at is timestamp
+        && request.resource.data.updated_at is timestamp
+        && request.resource.data.is_active is bool;
+    }
+    
+    // User Geolocation Collection
+    match /users_geolocation/{geoId} {
+      allow read, write: if isAuthenticated() && isOwner(resource.data.user_id);
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['user_id', 'time'])
+        && request.resource.data.user_id is string
+        && request.resource.data.time is timestamp;
+    }
+    
+    // User Credits Collection
+    match /users_credits/{userId} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if false; // Only allow programmatic updates via server
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['user_id', 'balance', 'total_earned', 'total_spent', 'last_updated', 'created_at'])
+        && request.resource.data.user_id is string
+        && request.resource.data.balance is int
+        && request.resource.data.total_earned is int
+        && request.resource.data.total_spent is int
+        && request.resource.data.last_updated is timestamp
+        && request.resource.data.created_at is timestamp;
+    }
+    
+    // User Subscriptions Collection
+    match /users_subscriptions/{subscriptionId} {
+      allow read: if isAuthenticated() && isOwner(resource.data.user_id);
+      allow write: if false; // Only allow programmatic updates via server
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['subscription_id', 'user_id', 'stripe_subscription_id', 'plan_name', 'status', 'credits_monthly', 'current_period_start', 'current_period_end', 'created_at', 'updated_at'])
+        && request.resource.data.subscription_id is string
+        && request.resource.data.user_id is string
+        && request.resource.data.stripe_subscription_id is string
+        && request.resource.data.plan_name is string
+        && request.resource.data.status is string
+        && request.resource.data.credits_monthly is int
+        && request.resource.data.current_period_start is timestamp
+        && request.resource.data.current_period_end is timestamp
+        && request.resource.data.created_at is timestamp
+        && request.resource.data.updated_at is timestamp;
+    }
+    
+    // Payment Records Collection
+    match /payments_records/{paymentId} {
+      allow read: if isAuthenticated() && isOwner(resource.data.user_id);
+      allow write: if false; // Only allow programmatic updates via server
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['payment_id', 'user_id', 'stripe_payment_intent_id', 'amount', 'currency', 'status', 'product_type', 'product_id', 'quantity', 'created_at', 'updated_at'])
+        && request.resource.data.payment_id is string
+        && request.resource.data.user_id is string
+        && request.resource.data.stripe_payment_intent_id is string
+        && request.resource.data.amount is int
+        && request.resource.data.currency is string
+        && request.resource.data.status is string
+        && request.resource.data.product_type is string
+        && request.resource.data.product_id is string
+        && request.resource.data.quantity is int
+        && request.resource.data.created_at is timestamp
+        && request.resource.data.updated_at is timestamp;
+    }
+    
+    // Credit Transactions Collection
+    match /credits_transactions/{transactionId} {
+      allow read: if isAuthenticated() && isOwner(resource.data.user_id);
+      allow write: if false; // Only allow programmatic updates via server
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['transaction_id', 'user_id', 'type', 'amount', 'created_at'])
+        && request.resource.data.transaction_id is string
+        && request.resource.data.user_id is string
+        && request.resource.data.type is string
+        && request.resource.data.amount is int
+        && request.resource.data.created_at is timestamp;
+    }
+  }
+} 

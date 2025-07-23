@@ -8,13 +8,16 @@ from traceback import format_exc
 from typing import Annotated, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from google.cloud import bigquery, run_v2, storage
+from google.cloud import run_v2, storage
 from google.cloud.run_v2.types.condition import Condition
 from PIL import Image
 from pydantic import BaseModel
 
 from app.models.cost_centre import CostCentreManager
+from app.models.firestore import CreationProfile as FirestoreCreationProfile
+from app.models.firestore import TaskVideoGenerator as FirestoreTaskVideoGenerator
 from app.server.routers.auth_routes import User, get_current_user
+from app.services.firestore_service import get_firestore_service
 from app.tasks.video_generator.main import VideoGenerator
 from config import ENV, GCLOUD_STB_CREATIONS_NAME
 
@@ -372,33 +375,24 @@ async def generate_video_status(
     """Get the status of video generation for a creation."""
     try:
         if ENV == "p":
-            # Initialize BigQuery client
-            bq_client = bigquery.Client()
+            # Initialize Firestore service
+            firestore_service = get_firestore_service()
 
-            # First, get the task record from BigQuery
-            query = """
-            SELECT execution_id, status
-            FROM `bai-buchai-p.tasks.video_generator`
-            WHERE creation_id = @creation_id
-            ORDER BY created_at DESC
-            LIMIT 1
-            """
-
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-                ]
+            # Get the task record from Firestore
+            tasks = await firestore_service.query_collection(
+                collection_name="tasks_video_generator",
+                filters=[("creation_id", "==", creation_id)],
+                order_by="created_at",
+                limit=1,
+                model_class=FirestoreTaskVideoGenerator,
             )
 
-            query_job = bq_client.query(query, job_config=job_config)
-            results = list(query_job.result())
-
-            if not results:
+            if not tasks:
                 return TaskStatusResponse(
                     status="not_found", message="No task found for this creation"
                 )
 
-            task = results[0]
+            task = tasks[0]
             execution_name = task.execution_id
             current_status = task.status
 
@@ -437,31 +431,18 @@ async def generate_video_status(
 
                 message = latest_condition.reason if new_status == "failed" else None
 
-                # Update the task status in BigQuery if it has changed
+                # Update the task status in Firestore if it has changed
                 if new_status != current_status:
-                    update_query = """
-                    UPDATE `bai-buchai-p.tasks.video_generator`
-                    SET status = @new_status,
-                        updated_at = CURRENT_TIMESTAMP()
-                    WHERE creation_id = @creation_id
-                    AND execution_id = @execution_id
-                    """
+                    update_data = {
+                        "status": new_status,
+                        "updated_at": datetime.utcnow(),
+                    }
 
-                    update_config = bigquery.QueryJobConfig(
-                        query_parameters=[
-                            bigquery.ScalarQueryParameter(
-                                "new_status", "STRING", new_status
-                            ),
-                            bigquery.ScalarQueryParameter(
-                                "creation_id", "STRING", creation_id
-                            ),
-                            bigquery.ScalarQueryParameter(
-                                "execution_id", "STRING", execution_name
-                            ),
-                        ]
+                    await firestore_service.update_document(
+                        collection_name="tasks_video_generator",
+                        document_id=task.execution_id,  # Using execution_id as document ID
+                        update_data=update_data,
                     )
-
-                    bq_client.query(update_query, update_config).result()
 
                 return TaskStatusResponse(status=new_status, message=message)
 
@@ -533,34 +514,24 @@ async def generate_video(
             # This is a google.cloud.run_v2.types.RunJobMetadata object
             execution_name = metadata.name  # Full resource name
 
-            # Initialize BigQuery client
-            bq_client = bigquery.Client()
+            # Initialize Firestore service
+            firestore_service = get_firestore_service()
 
-            # Insert initial task record
-            query = """
-            INSERT INTO `bai-buchai-p.tasks.video_generator` (
-                creation_id, execution_id, created_at, updated_at, status, metadata
-            )
-            VALUES (
-                @creation_id,
-                @execution_id,
-                CURRENT_TIMESTAMP(),
-                CURRENT_TIMESTAMP(),
-                'pending',
-                JSON_OBJECT()
-            )
-            """
+            # Insert initial task record into Firestore
+            task_data = {
+                "creation_id": creation_id,
+                "execution_id": execution_name,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+                "status": "pending",
+                "metadata": {},
+            }
 
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-                    bigquery.ScalarQueryParameter(
-                        "execution_id", "STRING", execution_name
-                    ),
-                ]
+            await firestore_service.create_document(
+                collection_name="tasks_video_generator",
+                document_data=task_data,
+                document_id=execution_name,  # Using execution_name as document ID
             )
-
-            bq_client.query(query, job_config=job_config).result()
 
             # Return immediate response
             return TaskStatusResponse(
@@ -612,45 +583,34 @@ async def generate_creation(
 ) -> CreationResponse:
     """Generate a new creation."""
     try:
-        # Initialize clients
-        bigquery_client = bigquery.Client()
+        # Initialize Firestore service
+        firestore_service = get_firestore_service()
 
         # Generate a unique creation ID
         creation_id = str(uuid.uuid4())
 
-        # Insert the creation profile
-        query = """
-        INSERT INTO `bai-buchai-p.creations.profiles` (
-            creation_id, title, description, creator_id, user_id, 
-            created_at, updated_at, status, visibility, tags, metadata, is_active
-        )
-        VALUES (
-            @creation_id, 
-            @creation_id,
-            'No description provided',
-            @user_id, 
-            @user_id, 
-            CURRENT_TIMESTAMP(), 
-            CURRENT_TIMESTAMP(), 
-            'draft', 
-            'private', 
-            [], 
-            JSON_OBJECT(), 
-            TRUE
-        )
-        """
+        # Create the creation profile data
+        creation_data = {
+            "creation_id": creation_id,
+            "title": creation_id,  # Use creation_id as default title
+            "description": "No description provided",
+            "creator_id": current_user.username,
+            "user_id": current_user.username,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            "status": "draft",
+            "visibility": "private",
+            "tags": [],
+            "metadata": {},
+            "is_active": True,
+        }
 
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-                bigquery.ScalarQueryParameter(
-                    "user_id", "STRING", current_user.username
-                ),
-            ]
+        # Insert the creation profile into Firestore
+        await firestore_service.create_document(
+            collection_name="creations_profiles",
+            document_data=creation_data,
+            document_id=creation_id,
         )
-
-        query_job = bigquery_client.query(query, job_config=job_config)
-        query_job.result()  # Wait for the query to complete
 
         return CreationResponse(data=creation_id)
 
@@ -691,28 +651,17 @@ async def delete_creation(
     """Delete a creation and all its associated data."""
     try:
         # Initialize clients
-        bigquery_client = bigquery.Client()
+        firestore_service = get_firestore_service()
         storage_client = storage.Client()
 
-        # First, verify the creation belongs to the user
-        verify_query = """
-        SELECT creation_id
-        FROM `bai-buchai-p.creations.profiles`
-        WHERE creation_id = @creation_id
-        AND user_id = @user_id
-        """
-
-        verify_job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-                bigquery.ScalarQueryParameter(
-                    "user_id", "STRING", current_user.username
-                ),
-            ]
+        # First, verify the creation belongs to the user and exists
+        creation = await firestore_service.get_document(
+            collection_name="creations_profiles",
+            document_id=creation_id,
+            model_class=FirestoreCreationProfile,
         )
 
-        verify_job = bigquery_client.query(verify_query, verify_job_config)
-        if not list(verify_job.result()):
+        if not creation or creation.user_id != current_user.username:
             logger.error(
                 f"Creation {creation_id} not found or unauthorized\n{format_exc()}"
             )
@@ -721,24 +670,10 @@ async def delete_creation(
                 detail="Creation not found or you don't have permission to delete it",
             )
 
-        # Delete from BigQuery
-        delete_query = """
-        DELETE FROM `bai-buchai-p.creations.profiles`
-        WHERE creation_id = @creation_id
-        AND user_id = @user_id
-        """
-
-        delete_job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-                bigquery.ScalarQueryParameter(
-                    "user_id", "STRING", current_user.username
-                ),
-            ]
+        # Delete from Firestore
+        await firestore_service.delete_document(
+            collection_name="creations_profiles", document_id=creation_id
         )
-
-        delete_job = bigquery_client.query(delete_query, delete_job_config)
-        delete_job.result()  # Wait for the query to complete
 
         # Delete from Google Cloud Storage
         bucket = storage_client.bucket(GCLOUD_STB_CREATIONS_NAME)
@@ -766,28 +701,17 @@ async def update_creation(
 ) -> CreationResponse:
     """Update editable fields for a specific creation."""
     try:
-        # Initialize BigQuery client
-        bigquery_client = bigquery.Client()
+        # Initialize Firestore service
+        firestore_service = get_firestore_service()
 
-        # First, verify the creation belongs to the user
-        verify_query = """
-        SELECT creation_id
-        FROM `bai-buchai-p.creations.profiles`
-        WHERE creation_id = @creation_id
-        AND user_id = @user_id
-        """
-
-        verify_job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-                bigquery.ScalarQueryParameter(
-                    "user_id", "STRING", current_user.username
-                ),
-            ]
+        # First, verify the creation belongs to the user and exists
+        creation = await firestore_service.get_document(
+            collection_name="creations_profiles",
+            document_id=creation_id,
+            model_class=FirestoreCreationProfile,
         )
 
-        verify_job = bigquery_client.query(verify_query, verify_job_config)
-        if not list(verify_job.result()):
+        if not creation or creation.user_id != current_user.username:
             logger.error(
                 f"Creation {creation_id} not found or unauthorized\n{format_exc()}"
             )
@@ -796,26 +720,14 @@ async def update_creation(
                 detail="Creation not found or you don't have permission to update it",
             )
 
-        # Build the update query dynamically based on provided fields
-        update_fields = []
-        query_parameters = [
-            bigquery.ScalarQueryParameter("creation_id", "STRING", creation_id),
-            bigquery.ScalarQueryParameter("user_id", "STRING", current_user.username),
-        ]
+        # Build the update data dynamically based on provided fields
+        update_fields = {}
 
         if update_data.title is not None:
-            update_fields.append("title = @title")
-            query_parameters.append(
-                bigquery.ScalarQueryParameter("title", "STRING", update_data.title)
-            )
+            update_fields["title"] = update_data.title
 
         if update_data.description is not None:
-            update_fields.append("description = @description")
-            query_parameters.append(
-                bigquery.ScalarQueryParameter(
-                    "description", "STRING", update_data.description
-                )
-            )
+            update_fields["description"] = update_data.description
 
         if update_data.status is not None:
             # Validate status value
@@ -825,10 +737,7 @@ async def update_creation(
                     status_code=400,
                     detail=f"Invalid status value. Must be one of: {', '.join(valid_statuses)}",
                 )
-            update_fields.append("status = @status")
-            query_parameters.append(
-                bigquery.ScalarQueryParameter("status", "STRING", update_data.status)
-            )
+            update_fields["status"] = update_data.status
 
         if update_data.visibility is not None:
             # Validate visibility value
@@ -838,37 +747,24 @@ async def update_creation(
                     status_code=400,
                     detail=f"Invalid visibility value. Must be one of: {', '.join(valid_visibilities)}",
                 )
-            update_fields.append("visibility = @visibility")
-            query_parameters.append(
-                bigquery.ScalarQueryParameter(
-                    "visibility", "STRING", update_data.visibility
-                )
-            )
+            update_fields["visibility"] = update_data.visibility
 
         if update_data.tags is not None:
-            update_fields.append("tags = @tags")
-            query_parameters.append(
-                bigquery.ArrayQueryParameter("tags", "STRING", update_data.tags)
-            )
+            update_fields["tags"] = update_data.tags
 
         # Always update the updated_at timestamp
-        update_fields.append("updated_at = CURRENT_TIMESTAMP()")
+        update_fields["updated_at"] = datetime.utcnow()
 
         # If no fields to update, return early
-        if not update_fields:
+        if len(update_fields) == 1:  # Only updated_at
             return CreationResponse(data=creation_id)
 
-        # Construct and execute the update query
-        update_query = f"""
-        UPDATE `bai-buchai-p.creations.profiles`
-        SET {", ".join(update_fields)}
-        WHERE creation_id = @creation_id
-        AND user_id = @user_id
-        """
-
-        update_job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
-        update_job = bigquery_client.query(update_query, update_job_config)
-        update_job.result()  # Wait for the query to complete
+        # Update the document in Firestore
+        await firestore_service.update_document(
+            collection_name="creations_profiles",
+            document_id=creation_id,
+            update_data=update_fields,
+        )
 
         return CreationResponse(data=creation_id)
 

@@ -6,9 +6,9 @@ from typing import Annotated, List
 
 import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from google.cloud import bigquery
 from pydantic import BaseModel
 
+from app.models.firestore import PaymentRecord as FirestorePaymentRecord
 from app.models.payment import (
     CreditBalanceResponse,
     CreditTransactionType,
@@ -20,6 +20,7 @@ from app.models.payment import (
     UserSubscriptionResponse,
 )
 from app.server.routers.auth_routes import User, get_current_user
+from app.services.firestore_service import get_firestore_service
 from app.services.payments.credit_manager import CreditManager
 from app.services.payments.stripe import (
     fetch_products,
@@ -39,8 +40,8 @@ stripe.api_key = STRIPE_SECRET_KEY
 # Create payment router
 payment_router = APIRouter()
 
-# Initialize BigQuery client and managers
-bq_client = bigquery.Client()
+# Initialize Firestore service and managers
+firestore_service = get_firestore_service()
 credit_manager = CreditManager()
 subscription_manager = SubscriptionManager()
 
@@ -266,65 +267,42 @@ async def get_payment_history(
 ) -> PaymentHistoryResponse:
     """Get payment history for the current user."""
     try:
-        # Query payments from database
-        query = """
-        SELECT *
-        FROM `bai-buchai-p.payments.records`
-        WHERE user_id = @user_id
-        ORDER BY created_at DESC
-        LIMIT @limit OFFSET @offset
-        """
-
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter(
-                    "user_id", "STRING", current_user.username
-                ),
-                bigquery.ScalarQueryParameter("limit", "INT64", limit),
-                bigquery.ScalarQueryParameter("offset", "INT64", offset),
-            ]
+        # Query payments from Firestore
+        firestore_payments = await firestore_service.query_collection(
+            collection_name="payments_records",
+            filters=[("user_id", "==", current_user.username)],
+            order_by="created_at",
+            limit=limit,
+            offset=offset,
+            model_class=FirestorePaymentRecord,
         )
 
-        query_job = bq_client.query(query, job_config=job_config)
-        results = query_job.result()
-
+        # Convert Firestore models to API models
         payments = []
-        for row in results:
+        for fp in firestore_payments:
             payments.append(
                 PaymentRecord(
-                    payment_id=row.payment_id,
-                    user_id=row.user_id,
-                    stripe_payment_intent_id=row.stripe_payment_intent_id,
-                    amount=row.amount,
-                    currency=row.currency,
-                    status=PaymentStatus(row.status),
-                    product_type=ProductType(row.product_type),
-                    product_id=row.product_id,
-                    quantity=row.quantity,
-                    description=row.description,
-                    created_at=row.created_at,
-                    updated_at=row.updated_at,
-                    completed_at=row.completed_at,
+                    payment_id=fp.payment_id,
+                    user_id=fp.user_id,
+                    stripe_payment_intent_id=fp.stripe_payment_intent_id,
+                    amount=fp.amount,
+                    currency=fp.currency,
+                    status=PaymentStatus(fp.status),
+                    product_type=ProductType(fp.product_type),
+                    product_id=fp.product_id,
+                    quantity=fp.quantity,
+                    description=fp.description,
+                    created_at=fp.created_at,
+                    updated_at=fp.updated_at,
+                    completed_at=fp.completed_at,
                 )
             )
 
         # Get total count
-        count_query = """
-        SELECT COUNT(*) as total
-        FROM `bai-buchai-p.payments.records`
-        WHERE user_id = @user_id
-        """
-
-        count_job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter(
-                    "user_id", "STRING", current_user.username
-                ),
-            ]
+        total_count = await firestore_service.count_documents(
+            collection_name="payments_records",
+            filters=[("user_id", "==", current_user.username)],
         )
-
-        count_job = bq_client.query(count_query, count_job_config)
-        total_count = list(count_job.result())[0].total
 
         return PaymentHistoryResponse(payments=payments, total_count=total_count)
 
@@ -348,68 +326,53 @@ async def store_payment_record(
     quantity: int,
     description: str = None,
 ) -> None:
-    """Store payment record in database."""
-    query = """
-    INSERT INTO `bai-buchai-p.payments.records` (
-        payment_id, user_id, stripe_payment_intent_id, amount, currency,
-        status, product_type, product_id, quantity, description,
-        created_at, updated_at
-    )
-    VALUES (
-        @payment_id, @user_id, @stripe_payment_intent_id, @amount, @currency,
-        @status, @product_type, @product_id, @quantity, @description,
-        CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP()
-    )
-    """
+    """Store payment record in Firestore."""
+    payment_data = {
+        "payment_id": payment_id,
+        "user_id": user_id,
+        "stripe_payment_intent_id": stripe_payment_intent_id,
+        "amount": amount,
+        "currency": currency,
+        "status": status.value,
+        "product_type": product_type.value,
+        "product_id": product_id,
+        "quantity": quantity,
+        "description": description,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow(),
+    }
 
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("payment_id", "STRING", payment_id),
-            bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-            bigquery.ScalarQueryParameter(
-                "stripe_payment_intent_id", "STRING", stripe_payment_intent_id
-            ),
-            bigquery.ScalarQueryParameter("amount", "INT64", amount),
-            bigquery.ScalarQueryParameter("currency", "STRING", currency),
-            bigquery.ScalarQueryParameter("status", "STRING", status.value),
-            bigquery.ScalarQueryParameter("product_type", "STRING", product_type.value),
-            bigquery.ScalarQueryParameter("product_id", "STRING", product_id),
-            bigquery.ScalarQueryParameter("quantity", "INT64", quantity),
-            bigquery.ScalarQueryParameter("description", "STRING", description),
-        ]
+    await firestore_service.create_document(
+        collection_name="payments_records",
+        document_data=payment_data,
+        document_id=payment_id,
     )
-
-    query_job = bq_client.query(query, job_config=job_config)
-    query_job.result()
 
 
 async def update_payment_status(
     stripe_payment_intent_id: str, status: PaymentStatus, completed_at: datetime = None
 ) -> None:
-    """Update payment status in database."""
-    query = """
-    UPDATE `bai-buchai-p.payments.records`
-    SET status = @status, updated_at = CURRENT_TIMESTAMP()
-    """
+    """Update payment status in Firestore."""
+    # Find the payment record by stripe_payment_intent_id
+    payments = await firestore_service.query_collection(
+        collection_name="payments_records",
+        filters=[("stripe_payment_intent_id", "==", stripe_payment_intent_id)],
+        limit=1,
+        model_class=FirestorePaymentRecord,
+    )
 
-    parameters = [
-        bigquery.ScalarQueryParameter("status", "STRING", status.value),
-        bigquery.ScalarQueryParameter(
-            "stripe_payment_intent_id", "STRING", stripe_payment_intent_id
-        ),
-    ]
+    if payments:
+        payment = payments[0]
+        update_data = {"status": status.value, "updated_at": datetime.utcnow()}
 
-    if completed_at:
-        query += ", completed_at = @completed_at"
-        parameters.append(
-            bigquery.ScalarQueryParameter("completed_at", "TIMESTAMP", completed_at)
+        if completed_at:
+            update_data["completed_at"] = completed_at
+
+        await firestore_service.update_document(
+            collection_name="payments_records",
+            document_id=payment.payment_id,
+            update_data=update_data,
         )
-
-    query += " WHERE stripe_payment_intent_id = @stripe_payment_intent_id"
-
-    job_config = bigquery.QueryJobConfig(query_parameters=parameters)
-    query_job = bq_client.query(query, job_config=job_config)
-    query_job.result()
 
 
 async def handle_bonus_checkout_success(checkout_session: dict) -> None:

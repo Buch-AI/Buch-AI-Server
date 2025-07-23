@@ -215,7 +215,7 @@ class GeolocationProcessor:
 
     def log_user(self, user_id: str) -> bool:
         """
-        Log user geolocation data to BigQuery.
+        Log user geolocation data to Firestore.
 
         Args:
             user_id: User ID to associate with the geolocation data
@@ -224,10 +224,13 @@ class GeolocationProcessor:
             bool: True if logging was successful, False otherwise
         """
         try:
-            from google.cloud import bigquery
+            import uuid
+            from datetime import datetime
 
-            # Initialize BigQuery client
-            bigquery_client = bigquery.Client()
+            from app.services.firestore_service import get_firestore_service
+
+            # Initialize Firestore service
+            firestore_service = get_firestore_service()
 
             # Extract coordinates if available
             coord_lat = None
@@ -240,41 +243,31 @@ class GeolocationProcessor:
                 except (ValueError, IndexError):
                     logger.warning(f"Invalid coordinates for logging: {coords}")
 
-            # Prepare the insert query (omitting is_vpn since VPN detection not implemented)
-            query = """
-            INSERT INTO `bai-buchai-p.users.geolocation` (
-                user_id, time, ipv4, geolocation, coord_lat, coord_lon, country_code
-            )
-            VALUES (
-                @user_id,
-                CURRENT_TIMESTAMP(),
-                @ipv4,
-                @geolocation,
-                @coord_lat,
-                @coord_lon,
-                @country_code
-            )
-            """
+            # Prepare the geolocation data
+            geo_data = {
+                "user_id": user_id,
+                "time": datetime.utcnow(),
+                "ipv4": self._response.ip,
+                "geolocation": self.get_geolocation(),
+                "coord_lat": coord_lat,
+                "coord_lon": coord_lon,
+                "country_code": self._response.country_code,
+                "is_vpn": None,  # VPN detection not implemented yet
+            }
 
-            # Prepare query parameters
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-                    bigquery.ScalarQueryParameter("ipv4", "STRING", self._response.ip),
-                    bigquery.ScalarQueryParameter(
-                        "geolocation", "STRING", self.get_geolocation()
-                    ),
-                    bigquery.ScalarQueryParameter("coord_lat", "FLOAT", coord_lat),
-                    bigquery.ScalarQueryParameter("coord_lon", "FLOAT", coord_lon),
-                    bigquery.ScalarQueryParameter(
-                        "country_code", "STRING", self._response.country_code
-                    ),
-                ]
-            )
+            # Create document in Firestore
+            import asyncio
 
-            # Execute the query
-            query_job = bigquery_client.query(query, job_config=job_config)
-            query_job.result()  # Wait for the query to complete
+            # Run async function in sync context
+            async def _create_document():
+                await firestore_service.create_document(
+                    collection_name="users_geolocation",
+                    document_data=geo_data,
+                    document_id=str(uuid.uuid4()),
+                )
+
+            # Execute the async function
+            asyncio.run(_create_document())
 
             logger.info(
                 f"Successfully logged geolocation data for user {user_id} with IP {self.ip_address}"

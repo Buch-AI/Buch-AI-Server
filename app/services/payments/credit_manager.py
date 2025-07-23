@@ -1,16 +1,26 @@
+"""
+Credit Manager - Firestore Version
+
+This module manages user credit operations including balance tracking and transactions,
+using Firestore instead of BigQuery for improved performance and real-time capabilities.
+"""
+
 import logging
 import uuid
+from datetime import datetime
 from traceback import format_exc
 from typing import List, Optional
 
 from fastapi import HTTPException
-from google.cloud import bigquery
 
+from app.models.firestore import CreditTransaction as FirestoreCreditTransaction
+from app.models.firestore import UserCredits as FirestoreUserCredits
 from app.models.payment import (
     CreditBalance,
     CreditTransaction,
     CreditTransactionType,
 )
+from app.services.firestore_service import get_firestore_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +31,7 @@ class CreditManager:
     """Manages user credit operations including balance tracking and transactions."""
 
     def __init__(self):
-        self.bq_client = bigquery.Client()
+        self.firestore_service = get_firestore_service()
 
     async def get_credits(self, user_id: str) -> Optional[CreditBalance]:
         """
@@ -34,30 +44,21 @@ class CreditManager:
             CreditBalance object or None if user has no credit record
         """
         try:
-            query = """
-            SELECT user_id, balance, total_earned, total_spent, last_updated, created_at
-            FROM `bai-buchai-p.users.credits`
-            WHERE user_id = @user_id
-            """
-
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-                ]
+            # Get user credits from Firestore
+            credits = await self.firestore_service.get_document(
+                collection_name="users_credits",
+                document_id=user_id,
+                model_class=FirestoreUserCredits,
             )
 
-            query_job = self.bq_client.query(query, job_config=job_config)
-            results = list(query_job.result())
-
-            if results:
-                row = results[0]
+            if credits:
                 return CreditBalance(
-                    user_id=row.user_id,
-                    balance=row.balance,
-                    total_earned=row.total_earned,
-                    total_spent=row.total_spent,
-                    last_updated=row.last_updated,
-                    created_at=row.created_at,
+                    user_id=credits.user_id,
+                    balance=credits.balance,
+                    total_earned=credits.total_earned,
+                    total_spent=credits.total_spent,
+                    last_updated=credits.last_updated,
+                    created_at=credits.created_at,
                 )
             return None
 
@@ -94,45 +95,44 @@ class CreditManager:
             # Ensure user has a credit record
             await self._ensure_user_credit_record(user_id)
 
+            # Get current credits
+            credits = await self.firestore_service.get_document(
+                collection_name="users_credits",
+                document_id=user_id,
+                model_class=FirestoreUserCredits,
+            )
+
+            if credits:
+                new_balance = credits.balance + amount
+                new_total_earned = credits.total_earned + amount
+            else:
+                new_balance = amount
+                new_total_earned = amount
+
+            # Update user credits
+            update_data = {
+                "balance": new_balance,
+                "total_earned": new_total_earned,
+                "last_updated": datetime.utcnow(),
+            }
+
+            await self.firestore_service.update_document(
+                collection_name="users_credits",
+                document_id=user_id,
+                update_data=update_data,
+            )
+
             # Record the transaction
-            transaction_id = str(uuid.uuid4())
             await self._record_credit_transaction(
-                transaction_id,
-                user_id,
-                transaction_type,
-                amount,
-                description,
-                reference_id,
+                user_id, transaction_type, amount, description, reference_id
             )
 
-            # Update user's credit balance
-            update_query = """
-            UPDATE `bai-buchai-p.users.credits`
-            SET 
-                balance = balance + @amount,
-                total_earned = total_earned + @amount,
-                last_updated = CURRENT_TIMESTAMP()
-            WHERE user_id = @user_id
-            """
-
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("amount", "INT64", amount),
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-                ]
-            )
-
-            query_job = self.bq_client.query(update_query, job_config=job_config)
-            query_job.result()
-
-            logger.info(
-                f"Added {amount} credits to user {user_id} ({transaction_type.value})"
-            )
+            logger.info(f"Added {amount} credits to user {user_id}")
             return True
 
         except Exception as e:
             logger.error(
-                f"Failed to add credits to user {user_id}: {str(e)}\n{format_exc()}"
+                f"Failed to add credits for user {user_id}: {str(e)}\n{format_exc()}"
             )
             return False
 
@@ -144,78 +144,71 @@ class CreditManager:
         reference_id: Optional[str] = None,
     ) -> bool:
         """
-        Spend credits from user account.
+        Spend/deduct credits from user account.
 
         Args:
             user_id: The user ID to spend credits from
             amount: Number of credits to spend
             description: Description of the transaction
-            reference_id: Reference ID (e.g., creation_id, task_id)
+            reference_id: Reference ID for the transaction
 
         Returns:
-            True if successful
-
-        Raises:
-            HTTPException: If user has insufficient credits
+            True if successful, False if insufficient credits or error
         """
         try:
-            # Check if user has enough credits
-            current_credits = await self.get_credits(user_id)
-            if not current_credits or current_credits.balance < amount:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Insufficient credits. Required: {amount}, Available: {current_credits.balance if current_credits else 0}",
+            # Get current credits
+            credits = await self.firestore_service.get_document(
+                collection_name="users_credits",
+                document_id=user_id,
+                model_class=FirestoreUserCredits,
+            )
+
+            if not credits:
+                logger.warning(f"No credit record found for user {user_id}")
+                return False
+
+            if credits.balance < amount:
+                logger.warning(
+                    f"Insufficient credits for user {user_id}. "
+                    f"Available: {credits.balance}, Requested: {amount}"
                 )
+                return False
+
+            # Update user credits
+            new_balance = credits.balance - amount
+            new_total_spent = credits.total_spent + amount
+
+            update_data = {
+                "balance": new_balance,
+                "total_spent": new_total_spent,
+                "last_updated": datetime.utcnow(),
+            }
+
+            await self.firestore_service.update_document(
+                collection_name="users_credits",
+                document_id=user_id,
+                update_data=update_data,
+            )
 
             # Record the transaction
-            transaction_id = str(uuid.uuid4())
             await self._record_credit_transaction(
-                transaction_id,
-                user_id,
-                CreditTransactionType.SPENT,
-                amount,
-                description,
-                reference_id,
+                user_id, CreditTransactionType.SPENT, -amount, description, reference_id
             )
-
-            # Update user's credit balance
-            update_query = """
-            UPDATE `bai-buchai-p.users.credits`
-            SET 
-                balance = balance - @amount,
-                total_spent = total_spent + @amount,
-                last_updated = CURRENT_TIMESTAMP()
-            WHERE user_id = @user_id
-            """
-
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("amount", "INT64", amount),
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-                ]
-            )
-
-            query_job = self.bq_client.query(update_query, job_config=job_config)
-            query_job.result()
 
             logger.info(f"Spent {amount} credits for user {user_id}")
             return True
 
-        except HTTPException:
-            raise
         except Exception as e:
             logger.error(
                 f"Failed to spend credits for user {user_id}: {str(e)}\n{format_exc()}"
             )
-            raise HTTPException(
-                status_code=500, detail=f"Failed to spend credits: {str(e)}"
-            )
+            return False
 
     async def get_credit_transactions(
         self, user_id: str, limit: int = 50, offset: int = 0
     ) -> List[CreditTransaction]:
         """
-        Get user's credit transaction history.
+        Get credit transaction history for a user.
 
         Args:
             user_id: The user ID to get transactions for
@@ -226,44 +219,38 @@ class CreditManager:
             List of CreditTransaction objects
         """
         try:
-            query = """
-            SELECT transaction_id, user_id, type, amount, description, reference_id, created_at
-            FROM `bai-buchai-p.credits.transactions`
-            WHERE user_id = @user_id
-            ORDER BY created_at DESC
-            LIMIT @limit OFFSET @offset
-            """
-
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-                    bigquery.ScalarQueryParameter("limit", "INT64", limit),
-                    bigquery.ScalarQueryParameter("offset", "INT64", offset),
-                ]
+            # Query credit transactions from Firestore
+            firestore_transactions = await self.firestore_service.query_collection(
+                collection_name="credits_transactions",
+                filters=[("user_id", "==", user_id)],
+                order_by="created_at",
+                limit=limit,
+                offset=offset,
+                model_class=FirestoreCreditTransaction,
             )
 
-            query_job = self.bq_client.query(query, job_config=job_config)
-            results = query_job.result()
-
+            # Convert Firestore models to API models
             transactions = []
-            for row in results:
-                transactions.append(
-                    CreditTransaction(
-                        transaction_id=row.transaction_id,
-                        user_id=row.user_id,
-                        type=CreditTransactionType(row.type),
-                        amount=row.amount,
-                        description=row.description,
-                        reference_id=row.reference_id,
-                        created_at=row.created_at,
-                    )
+            for ft in firestore_transactions:
+                transaction = CreditTransaction(
+                    transaction_id=ft.transaction_id,
+                    user_id=ft.user_id,
+                    type=CreditTransactionType(ft.type),
+                    amount=ft.amount,
+                    description=ft.description,
+                    reference_id=ft.reference_id,
+                    created_at=ft.created_at,
                 )
+                transactions.append(transaction)
+
+            # Sort by created_at descending (most recent first)
+            transactions.sort(key=lambda x: x.created_at, reverse=True)
 
             return transactions
 
         except Exception as e:
             logger.error(
-                f"Failed to get credit transactions for {user_id}: {str(e)}\n{format_exc()}"
+                f"Failed to get credit transactions for user {user_id}: {str(e)}\n{format_exc()}"
             )
             raise HTTPException(
                 status_code=500,
@@ -272,33 +259,39 @@ class CreditManager:
 
     async def _ensure_user_credit_record(self, user_id: str) -> None:
         """
-        Ensure user has a credit record, create if not exists.
+        Ensure user has a credit record, create one if it doesn't exist.
 
         Args:
             user_id: The user ID to ensure has a credit record
         """
-        existing = await self.get_credits(user_id)
-        if not existing:
-            query = """
-            INSERT INTO `bai-buchai-p.users.credits` 
-            (user_id, balance, total_earned, total_spent, last_updated, created_at)
-            VALUES (@user_id, 0, 0, 0, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
-            """
+        # Check if user credit record exists
+        credits = await self.firestore_service.get_document(
+            collection_name="users_credits",
+            document_id=user_id,
+            model_class=FirestoreUserCredits,
+        )
 
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-                ]
+        if not credits:
+            # Create initial credit record
+            credit_data = {
+                "user_id": user_id,
+                "balance": 0,
+                "total_earned": 0,
+                "total_spent": 0,
+                "last_updated": datetime.utcnow(),
+                "created_at": datetime.utcnow(),
+            }
+
+            await self.firestore_service.create_document(
+                collection_name="users_credits",
+                document_data=credit_data,
+                document_id=user_id,
             )
 
-            query_job = self.bq_client.query(query, job_config=job_config)
-            query_job.result()
-
-            logger.info(f"Created credit record for user {user_id}")
+            logger.info(f"Created initial credit record for user {user_id}")
 
     async def _record_credit_transaction(
         self,
-        transaction_id: str,
         user_id: str,
         transaction_type: CreditTransactionType,
         amount: int,
@@ -309,31 +302,26 @@ class CreditManager:
         Record a credit transaction.
 
         Args:
-            transaction_id: Unique transaction ID
-            user_id: The user ID
-            transaction_type: Type of transaction
-            amount: Number of credits
+            user_id: The user ID for the transaction
+            transaction_type: Type of credit transaction
+            amount: Amount of credits (positive for earned, negative for spent)
             description: Description of the transaction
-            reference_id: Optional reference ID
+            reference_id: Reference ID for the transaction
         """
-        query = """
-        INSERT INTO `bai-buchai-p.credits.transactions`
-        (transaction_id, user_id, type, amount, description, reference_id, created_at)
-        VALUES (@transaction_id, @user_id, @type, @amount, @description, @reference_id, CURRENT_TIMESTAMP())
-        """
+        transaction_id = str(uuid.uuid4())
 
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter(
-                    "transaction_id", "STRING", transaction_id
-                ),
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-                bigquery.ScalarQueryParameter("type", "STRING", transaction_type.value),
-                bigquery.ScalarQueryParameter("amount", "INT64", amount),
-                bigquery.ScalarQueryParameter("description", "STRING", description),
-                bigquery.ScalarQueryParameter("reference_id", "STRING", reference_id),
-            ]
+        transaction_data = {
+            "transaction_id": transaction_id,
+            "user_id": user_id,
+            "type": transaction_type.value,
+            "amount": amount,
+            "description": description,
+            "reference_id": reference_id,
+            "created_at": datetime.utcnow(),
+        }
+
+        await self.firestore_service.create_document(
+            collection_name="credits_transactions",
+            document_data=transaction_data,
+            document_id=transaction_id,
         )
-
-        query_job = self.bq_client.query(query, job_config=job_config)
-        query_job.result()

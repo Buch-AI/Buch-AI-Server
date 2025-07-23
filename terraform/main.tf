@@ -72,7 +72,12 @@ resource "google_cloud_run_v2_job" "video_generator" {
   }
 }
 
-# Google Cloud BigQuery
+# Import Firestore configuration
+# Note: BigQuery resources have been replaced with Firestore
+# See firestore.tf for the new database configuration
+
+# Google Cloud Firestore (see firestore.tf)
+# Collections will be created automatically when documents are first written
 
 resource "google_bigquery_dataset" "creations" {
   dataset_id  = "creations"
