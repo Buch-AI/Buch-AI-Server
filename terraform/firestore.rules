@@ -80,29 +80,21 @@ service cloud.firestore {
         && request.resource.data.is_active is bool;
     }
     
-    // User Geolocation Collection
-    match /users_geolocation/{geoId} {
-      allow read, write: if isAuthenticated() && isOwner(resource.data.user_id);
-      allow create: if isAuthenticated()
-        && request.resource.data.keys().hasAll(['user_id', 'time'])
-        && request.resource.data.user_id is string
-        && request.resource.data.time is timestamp;
-    }
-    
     // User Credits Collection
     match /users_credits/{userId} {
       allow read: if isAuthenticated() && isOwner(userId);
       allow write: if false; // Only allow programmatic updates via server
       allow create: if isAuthenticated()
-        && request.resource.data.keys().hasAll(['user_id', 'balance', 'total_earned', 'total_spent', 'last_updated', 'created_at'])
+        && request.resource.data.keys().hasAll(['user_id', 'credits_monthly', 'credits_permanent', 'total_earned', 'total_spent', 'last_updated', 'created_at'])
         && request.resource.data.user_id is string
-        && request.resource.data.balance is int
+        && request.resource.data.credits_monthly is int
+        && request.resource.data.credits_permanent is int
         && request.resource.data.total_earned is int
         && request.resource.data.total_spent is int
         && request.resource.data.last_updated is timestamp
         && request.resource.data.created_at is timestamp;
     }
-    
+
     // User Subscriptions Collection
     match /users_subscriptions/{subscriptionId} {
       allow read: if isAuthenticated() && isOwner(resource.data.user_id);
@@ -120,8 +112,17 @@ service cloud.firestore {
         && request.resource.data.created_at is timestamp
         && request.resource.data.updated_at is timestamp;
     }
-    
-    // Payment Records Collection
+
+    // Geolocation Collection
+    match /users_geolocation/{geoId} {
+      allow read, write: if isAuthenticated() && isOwner(resource.data.user_id);
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['user_id', 'time'])
+        && request.resource.data.user_id is string
+        && request.resource.data.time is timestamp;
+    }
+
+    // Payments Collection
     match /payments_records/{paymentId} {
       allow read: if isAuthenticated() && isOwner(resource.data.user_id);
       allow write: if false; // Only allow programmatic updates via server
@@ -139,7 +140,7 @@ service cloud.firestore {
         && request.resource.data.created_at is timestamp
         && request.resource.data.updated_at is timestamp;
     }
-    
+
     // Credit Transactions Collection
     match /credits_transactions/{transactionId} {
       allow read: if isAuthenticated() && isOwner(resource.data.user_id);
@@ -150,7 +151,8 @@ service cloud.firestore {
         && request.resource.data.user_id is string
         && request.resource.data.type is string
         && request.resource.data.amount is int
-        && request.resource.data.created_at is timestamp;
+        && request.resource.data.created_at is timestamp
+        && (!request.resource.data.keys().hasAny(['pool']) || request.resource.data.pool is string);
     }
   }
 } 

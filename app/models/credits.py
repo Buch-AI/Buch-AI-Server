@@ -21,12 +21,22 @@ class CreditTransactionType(str, Enum):
     SPENT = "spent"
 
 
+class CreditPool(str, Enum):
+    """Credit pool enumeration."""
+
+    MONTHLY = "monthly"
+    PERMANENT = "permanent"
+
+
 class BaseCreditTransaction(BaseModel):
     """Base credit transaction model shared between Firestore and API."""
 
     transaction_id: str = Field(..., description="Unique transaction identifier")
     user_id: str = Field(..., description="Associated user ID")
     type: str = Field(..., description="Transaction type")
+    pool: Optional[str] = Field(
+        None, description="Credit pool affected (monthly/permanent)"
+    )
     amount: int = Field(
         ..., description="Credit amount (positive for earned, negative for spent)"
     )

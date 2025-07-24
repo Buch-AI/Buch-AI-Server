@@ -6,7 +6,7 @@ from traceback import format_exc
 import stripe
 from fastapi import HTTPException
 
-from app.models.credits import CreditTransactionType
+from app.models.credits import CreditPool, CreditTransactionType
 from app.models.shared import (
     SubscriptionRecord,
     SubscriptionStatus,
@@ -84,6 +84,7 @@ class SubscriptionManager:
                 CreditTransactionType.EARNED_SUBSCRIPTION,
                 f"Initial subscription credits for {plan_name}",
                 subscription_id,
+                CreditPool.MONTHLY,
             )
 
             logger.info(f"Created subscription {subscription_id} for user {user_id}")
@@ -243,6 +244,7 @@ class SubscriptionManager:
                 CreditTransactionType.EARNED_SUBSCRIPTION,
                 f"Monthly subscription credits for {subscription.plan_name}",
                 subscription.subscription_id,
+                CreditPool.MONTHLY,
             )
 
             # Update subscription period

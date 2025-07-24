@@ -16,11 +16,21 @@ class BaseUserCredits(BaseModel):
     """Base user credits model shared between Firestore and API."""
 
     user_id: str = Field(..., description="Associated user ID")
-    balance: int = Field(..., ge=0, description="Current credit balance")
+    credits_monthly: int = Field(
+        ..., ge=0, description="Monthly credit balance (from subscriptions)"
+    )
+    credits_permanent: int = Field(
+        ..., ge=0, description="Permanent credit balance (from bonuses/add-ons)"
+    )
     total_earned: int = Field(..., ge=0, description="Total credits earned")
     total_spent: int = Field(..., ge=0, description="Total credits spent")
     last_updated: datetime = Field(..., description="Last balance update timestamp")
     created_at: datetime = Field(..., description="Record creation timestamp")
+
+    @property
+    def balance(self) -> int:
+        """Total available credits (sum of monthly and permanent)."""
+        return self.credits_monthly + self.credits_permanent
 
 
 class BaseUserSubscription(BaseModel):

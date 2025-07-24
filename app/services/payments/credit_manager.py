@@ -14,6 +14,7 @@ from typing import List, Optional
 from fastapi import HTTPException
 
 from app.models.credits import (
+    CreditPool,
     CreditTransaction,
     CreditTransactionType,
 )
@@ -67,6 +68,7 @@ class CreditManager:
         transaction_type: CreditTransactionType,
         description: str,
         reference_id: Optional[str] = None,
+        pool: Optional[CreditPool] = None,
     ) -> bool:
         """
         Add credits to user account.
@@ -77,6 +79,7 @@ class CreditManager:
             transaction_type: Type of credit transaction
             description: Description of the transaction
             reference_id: Reference ID (e.g., subscription_id, payment_id)
+            pool: Which credit pool to add to (defaults based on transaction type)
 
         Returns:
             True if successful, False otherwise
@@ -84,6 +87,15 @@ class CreditManager:
         try:
             # Ensure user has a credit record
             await self._ensure_user_credit_record(user_id)
+
+            # Determine credit pool based on transaction type if not explicitly provided
+            if pool is None:
+                if transaction_type == CreditTransactionType.EARNED_SUBSCRIPTION:
+                    pool = CreditPool.MONTHLY
+                elif transaction_type == CreditTransactionType.EARNED_BONUS:
+                    pool = CreditPool.PERMANENT
+                else:
+                    pool = CreditPool.PERMANENT  # Default to permanent for other types
 
             # Get current credits using automatic conversion
             credits = await self.firestore_service.get_document(
@@ -93,15 +105,24 @@ class CreditManager:
             )
 
             if credits:
-                new_balance = credits.balance + amount
+                new_monthly = credits.credits_monthly
+                new_permanent = credits.credits_permanent
                 new_total_earned = credits.total_earned + amount
             else:
-                new_balance = amount
+                new_monthly = 0
+                new_permanent = 0
                 new_total_earned = amount
+
+            # Add credits to the appropriate pool
+            if pool == CreditPool.MONTHLY:
+                new_monthly += amount
+            else:  # CreditPool.PERMANENT
+                new_permanent += amount
 
             # Update user credits
             update_data = {
-                "balance": new_balance,
+                "credits_monthly": new_monthly,
+                "credits_permanent": new_permanent,
                 "total_earned": new_total_earned,
                 "last_updated": datetime.utcnow(),
             }
@@ -114,10 +135,12 @@ class CreditManager:
 
             # Record the transaction
             await self._record_credit_transaction(
-                user_id, transaction_type, amount, description, reference_id
+                user_id, transaction_type, amount, description, reference_id, pool
             )
 
-            logger.info(f"Added {amount} credits to user {user_id}")
+            logger.info(
+                f"Added {amount} credits to {pool.value} pool for user {user_id}"
+            )
             return True
 
         except Exception as e:
@@ -135,6 +158,7 @@ class CreditManager:
     ) -> bool:
         """
         Spend/deduct credits from user account.
+        Prioritizes spending from permanent pool first, then monthly pool.
 
         Args:
             user_id: The user ID to spend credits from
@@ -157,19 +181,28 @@ class CreditManager:
                 logger.warning(f"No credit record found for user {user_id}")
                 return False
 
-            if credits.balance < amount:
+            total_available = credits.balance
+            if total_available < amount:
                 logger.warning(
                     f"Insufficient credits for user {user_id}. "
-                    f"Available: {credits.balance}, Requested: {amount}"
+                    f"Available: {total_available}, Requested: {amount}"
                 )
                 return False
 
-            # Update user credits
-            new_balance = credits.balance - amount
+            # Calculate how to spend from each pool (permanent first)
+            remaining_to_spend = amount
+            from_permanent = min(remaining_to_spend, credits.credits_permanent)
+            remaining_to_spend -= from_permanent
+            from_monthly = min(remaining_to_spend, credits.credits_monthly)
+
+            # Update balances
+            new_permanent = credits.credits_permanent - from_permanent
+            new_monthly = credits.credits_monthly - from_monthly
             new_total_spent = credits.total_spent + amount
 
             update_data = {
-                "balance": new_balance,
+                "credits_monthly": new_monthly,
+                "credits_permanent": new_permanent,
                 "total_spent": new_total_spent,
                 "last_updated": datetime.utcnow(),
             }
@@ -180,12 +213,31 @@ class CreditManager:
                 update_data=update_data,
             )
 
-            # Record the transaction
-            await self._record_credit_transaction(
-                user_id, CreditTransactionType.SPENT, -amount, description, reference_id
-            )
+            # Record transactions for each pool spent from
+            if from_permanent > 0:
+                await self._record_credit_transaction(
+                    user_id,
+                    CreditTransactionType.SPENT,
+                    -from_permanent,
+                    f"{description} (from permanent pool)",
+                    reference_id,
+                    CreditPool.PERMANENT,
+                )
 
-            logger.info(f"Spent {amount} credits for user {user_id}")
+            if from_monthly > 0:
+                await self._record_credit_transaction(
+                    user_id,
+                    CreditTransactionType.SPENT,
+                    -from_monthly,
+                    f"{description} (from monthly pool)",
+                    reference_id,
+                    CreditPool.MONTHLY,
+                )
+
+            logger.info(
+                f"Spent {amount} credits for user {user_id} "
+                f"(permanent: {from_permanent}, monthly: {from_monthly})"
+            )
             return True
 
         except Exception as e:
@@ -252,7 +304,8 @@ class CreditManager:
             # Create initial credit record
             credit_data = {
                 "user_id": user_id,
-                "balance": 0,
+                "credits_monthly": 0,
+                "credits_permanent": 0,
                 "total_earned": 0,
                 "total_spent": 0,
                 "last_updated": datetime.utcnow(),
@@ -274,6 +327,7 @@ class CreditManager:
         amount: int,
         description: str,
         reference_id: Optional[str] = None,
+        pool: Optional[CreditPool] = None,
     ) -> None:
         """
         Record a credit transaction.
@@ -284,6 +338,7 @@ class CreditManager:
             amount: Amount of credits (positive for earned, negative for spent)
             description: Description of the transaction
             reference_id: Reference ID for the transaction
+            pool: Which credit pool was affected
         """
         transaction_id = str(uuid.uuid4())
 
@@ -291,6 +346,7 @@ class CreditManager:
             "transaction_id": transaction_id,
             "user_id": user_id,
             "type": transaction_type.value,
+            "pool": pool.value if pool else None,
             "amount": amount,
             "description": description,
             "reference_id": reference_id,

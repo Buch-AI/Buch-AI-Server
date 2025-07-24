@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.models.credits import (
+    CreditPool,
     CreditTransactionType,
 )
 from app.models.payments import (
@@ -166,7 +167,9 @@ async def get_user_credits(
 
     return CreditBalanceResponse(
         user_id=credits.user_id,
-        balance=credits.balance,
+        credits_monthly=credits.credits_monthly,
+        credits_permanent=credits.credits_permanent,
+        balance=credits.balance,  # This uses the property that sums both pools
         total_earned=credits.total_earned,
         total_spent=credits.total_spent,
         last_updated=credits.last_updated,
@@ -386,6 +389,7 @@ async def handle_bonus_checkout_success(checkout_session: dict) -> None:
                 CreditTransactionType.EARNED_BONUS,
                 "Credits from bonus purchase",
                 checkout_session["id"],
+                CreditPool.PERMANENT,
             )
 
     except Exception as e:

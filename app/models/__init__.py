@@ -19,6 +19,7 @@ from app.models.creations import (
 )
 from app.models.credits import (
     BaseCreditTransaction,
+    CreditPool,
     CreditTransaction,
     CreditTransactionType,
 )
@@ -74,6 +75,7 @@ __all__ = [
     "CostCentre",
     # Credit models
     "BaseCreditTransaction",
+    "CreditPool",
     "CreditTransaction",
     "CreditTransactionType",
     # User credit models (from users.py)
