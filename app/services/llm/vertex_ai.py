@@ -10,8 +10,8 @@ from fastapi import HTTPException, status
 from vertexai.generative_models import Content, GenerationConfig, GenerativeModel, Part
 from vertexai.language_models import TextEmbeddingModel
 
-from app.models.cost_centre import CostCentreManager
 from app.models.llm import ModelType, Prompt, Validator, VertexAiConfigManager
+from app.services.cost_centre import CostCentreManager
 from app.services.llm.common import (
     CostUsage,
     GenerateImagePromptsRequest,

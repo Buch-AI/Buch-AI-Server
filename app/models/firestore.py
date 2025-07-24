@@ -156,20 +156,6 @@ class CreditTransaction(BaseCreditTransaction, FirestoreBaseModel):
     pass
 
 
-# Collection name mappings for easy reference
-COLLECTION_NAMES = {
-    "cost_centres": "creations_cost_centres",
-    "creation_profiles": "creations_profiles",
-    "video_generator_tasks": "tasks_video_generator",
-    "user_auth": "users_auth",
-    "user_profiles": "users_profiles",
-    "user_geolocation": "users_geolocation",
-    "user_credits": "users_credits",
-    "user_subscriptions": "users_subscriptions",
-    "payment_records": "payments_records",
-    "credit_transactions": "credits_transactions",
-}
-
 # Model mappings for easy reference
 COLLECTION_MODELS = {
     "creations_cost_centres": CostCentre,

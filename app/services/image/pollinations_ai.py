@@ -6,7 +6,7 @@ from urllib.parse import quote
 import requests
 from fastapi import HTTPException, status
 
-from app.models.cost_centre import CostCentreManager
+from app.services.cost_centre import CostCentreManager
 from app.services.image.common import (
     ImageGenerationRequest,
     ImageGenerationResponse,

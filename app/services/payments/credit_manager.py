@@ -13,14 +13,12 @@ from typing import List, Optional
 
 from fastapi import HTTPException
 
-from app.models.firestore import CreditTransaction as FirestoreCreditTransaction
-from app.models.firestore import UserCredits as FirestoreUserCredits
 from app.models.payment import (
     CreditBalance,
     CreditTransaction,
     CreditTransactionType,
 )
-from app.services.firestore_service import get_firestore_service
+from app.services.firestore import get_firestore_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -44,23 +42,15 @@ class CreditManager:
             CreditBalance object or None if user has no credit record
         """
         try:
-            # Get user credits from Firestore
+            # Get user credits from Firestore with automatic conversion
+            # Pass the API model class directly - automatic conversion!
             credits = await self.firestore_service.get_document(
                 collection_name="users_credits",
                 document_id=user_id,
-                model_class=FirestoreUserCredits,
+                model_class=CreditBalance,  # API model class - automatic conversion!
             )
 
-            if credits:
-                return CreditBalance(
-                    user_id=credits.user_id,
-                    balance=credits.balance,
-                    total_earned=credits.total_earned,
-                    total_spent=credits.total_spent,
-                    last_updated=credits.last_updated,
-                    created_at=credits.created_at,
-                )
-            return None
+            return credits  # Already converted to CreditBalance
 
         except Exception as e:
             logger.error(
@@ -95,11 +85,11 @@ class CreditManager:
             # Ensure user has a credit record
             await self._ensure_user_credit_record(user_id)
 
-            # Get current credits
+            # Get current credits using automatic conversion
             credits = await self.firestore_service.get_document(
                 collection_name="users_credits",
                 document_id=user_id,
-                model_class=FirestoreUserCredits,
+                model_class=CreditBalance,  # API model class - automatic conversion!
             )
 
             if credits:
@@ -156,11 +146,11 @@ class CreditManager:
             True if successful, False if insufficient credits or error
         """
         try:
-            # Get current credits
+            # Get current credits using automatic conversion
             credits = await self.firestore_service.get_document(
                 collection_name="users_credits",
                 document_id=user_id,
-                model_class=FirestoreUserCredits,
+                model_class=CreditBalance,  # API model class - automatic conversion!
             )
 
             if not credits:
@@ -219,29 +209,16 @@ class CreditManager:
             List of CreditTransaction objects
         """
         try:
-            # Query credit transactions from Firestore
-            firestore_transactions = await self.firestore_service.query_collection(
+            # Query credit transactions from Firestore with automatic conversion
+            # Pass the API model class directly - the service will handle conversion automatically
+            transactions = await self.firestore_service.query_collection(
                 collection_name="credits_transactions",
                 filters=[("user_id", "==", user_id)],
                 order_by="created_at",
                 limit=limit,
                 offset=offset,
-                model_class=FirestoreCreditTransaction,
+                model_class=CreditTransaction,  # API model class - automatic conversion!
             )
-
-            # Convert Firestore models to API models
-            transactions = []
-            for ft in firestore_transactions:
-                transaction = CreditTransaction(
-                    transaction_id=ft.transaction_id,
-                    user_id=ft.user_id,
-                    type=CreditTransactionType(ft.type),
-                    amount=ft.amount,
-                    description=ft.description,
-                    reference_id=ft.reference_id,
-                    created_at=ft.created_at,
-                )
-                transactions.append(transaction)
 
             # Sort by created_at descending (most recent first)
             transactions.sort(key=lambda x: x.created_at, reverse=True)
@@ -264,11 +241,11 @@ class CreditManager:
         Args:
             user_id: The user ID to ensure has a credit record
         """
-        # Check if user credit record exists
+        # Check if user credit record exists using automatic conversion
         credits = await self.firestore_service.get_document(
             collection_name="users_credits",
             document_id=user_id,
-            model_class=FirestoreUserCredits,
+            model_class=CreditBalance,  # API model class - automatic conversion!
         )
 
         if not credits:

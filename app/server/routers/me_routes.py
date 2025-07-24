@@ -6,10 +6,9 @@ from typing import Annotated, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.models.firestore import CreationProfile as FirestoreCreationProfile
+from app.models.shared import BaseCreationProfile
 from app.server.routers.auth_routes import User, get_current_user
-from app.server.routers.creation_routes import CreationProfile
-from app.services.firestore_service import get_firestore_service
+from app.services.firestore import get_firestore_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,7 +19,7 @@ me_router = APIRouter()
 
 
 class CreationsResponse(BaseModel):
-    data: List[CreationProfile]
+    data: List[BaseCreationProfile]
 
 
 @me_router.get("/creations", response_model=CreationsResponse)
@@ -32,21 +31,16 @@ async def get_user_creations(
     firestore_service = get_firestore_service()
 
     try:
-        # Query user's creations from Firestore
-        # NOTE: Removed order_by to avoid index requirement, sorting in Python instead
-        firestore_creations = await firestore_service.query_collection(
+        # Query user's creations from Firestore with automatic conversion
+        # Pass the API model class directly - automatic conversion!
+        creations = await firestore_service.query_collection(
             collection_name="creations_profiles",
             filters=[("user_id", "==", current_user.username)],
-            model_class=FirestoreCreationProfile,
+            model_class=BaseCreationProfile,  # API model class - automatic conversion!
         )
 
         # Sort by created_at in Python (temporary solution until index is created)
-        firestore_creations.sort(
-            key=lambda x: x.created_at or datetime.min, reverse=True
-        )
-
-        # Since both models now inherit from the same base, we can use the Firestore models directly
-        creations = firestore_creations
+        creations.sort(key=lambda x: x.created_at or datetime.min, reverse=True)
 
         return CreationsResponse(data=creations)
 

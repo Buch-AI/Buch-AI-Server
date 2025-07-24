@@ -12,7 +12,7 @@ from pydantic import BaseModel, EmailStr
 
 from app.models.firestore import UserAuth
 from app.models.geolocation import GeolocationProcessor
-from app.services.firestore_service import get_firestore_service
+from app.services.firestore import get_firestore_service
 from config import AUTH_JWT_KEY
 
 # Configure logging

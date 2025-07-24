@@ -9,7 +9,7 @@ from google.cloud.texttospeech_v1.types import (
     VoiceSelectionParams,
 )
 
-from app.models.cost_centre import CostCentreManager
+from app.services.cost_centre import CostCentreManager
 from app.tasks.video_generator.video_slide import VideoSlide
 
 # Configure logging

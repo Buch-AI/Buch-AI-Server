@@ -8,8 +8,8 @@ import numpy as np
 from fastapi import HTTPException, status
 from huggingface_hub import AsyncInferenceClient, InferenceClient
 
-from app.models.cost_centre import CostCentreManager
 from app.models.llm import HuggingFaceConfigManager, ModelType, Prompt, Validator
+from app.services.cost_centre import CostCentreManager
 from app.services.llm.common import (
     CostUsage,
     GenerateImagePromptsRequest,

@@ -1,10 +1,11 @@
 """
-Firestore Service Layer
+Firestore Service Layer with Direct API Model Usage
 
-This module provides a service layer for interacting with Firestore,
-replacing the previous BigQuery-based data access patterns.
-It uses the Firebase Admin SDK and provides type-safe operations
-using the Pydantic models defined in app.models.firestore.
+This module provides a simplified service layer for Firestore operations where developers
+work directly with API models. Since API models and Firestore models share the same fields
+(they inherit from the same base models), we can use API models directly with Firestore data.
+
+Simply pass your API model class and get back instances of that class with Firestore data.
 """
 
 import logging
@@ -14,10 +15,10 @@ from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from firebase_admin import firestore, initialize_app
 from google.cloud.firestore import Client, DocumentReference, FieldFilter
+from pydantic import BaseModel
 
 from app.models.firestore import (
     COLLECTION_MODELS,
-    FirestoreBaseModel,
 )
 
 # Configure logging
@@ -25,15 +26,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Type variable for generic model operations
-T = TypeVar("T", bound=FirestoreBaseModel)
+T = TypeVar("T", bound=BaseModel)
 
 
 class FirestoreService:
     """
-    Service class for Firestore operations with type safety and Pydantic integration.
+    Service class for Firestore operations with direct API model usage.
 
-    This class replaces the previous BigQuery-based data access layer with
-    Firestore operations, maintaining the same interface where possible.
+    Since API models and Firestore models share identical fields (both inherit from the same base models),
+    we can use API models directly with Firestore data without any conversion overhead.
     """
 
     def __init__(self):
@@ -117,15 +118,15 @@ class FirestoreService:
         model_class: Optional[Type[T]] = None,
     ) -> Optional[T]:
         """
-        Get a document by ID.
+        Get a document by ID and return as API model instance.
 
         Args:
             collection_name: Name of the collection
             document_id: ID of the document to retrieve
-            model_class: Optional Pydantic model class to validate the data
+            model_class: API model class to instantiate with Firestore data
 
         Returns:
-            Document data as Pydantic model instance or None if not found
+            Document data as API model instance or None if not found
         """
         try:
             doc_ref = self.get_document_ref(collection_name, document_id)
@@ -137,14 +138,14 @@ class FirestoreService:
             data = doc.to_dict()
             data["id"] = doc.id  # Add document ID to data
 
-            # If model class provided, validate and return as model instance
             if model_class:
+                # Create the API model instance directly with Firestore data
                 return model_class(**data)
 
-            # Otherwise try to infer model from collection name
+            # Fallback to collection mapping if no model class provided
             if collection_name in COLLECTION_MODELS:
-                model_class = COLLECTION_MODELS[collection_name]
-                return model_class(**data)
+                firestore_model = COLLECTION_MODELS[collection_name]
+                return firestore_model(**data)
 
             return data
 
@@ -218,7 +219,7 @@ class FirestoreService:
         model_class: Optional[Type[T]] = None,
     ) -> List[T]:
         """
-        Query a collection with filters, ordering, and pagination.
+        Query a collection and return API model instances.
 
         Args:
             collection_name: Name of the collection to query
@@ -226,10 +227,10 @@ class FirestoreService:
             order_by: Field to order by
             limit: Maximum number of results
             offset: Number of results to skip
-            model_class: Optional Pydantic model class
+            model_class: API model class to instantiate with Firestore data
 
         Returns:
-            List of documents as model instances
+            List of documents as API model instances
         """
         try:
             query = self.get_collection_ref(collection_name)
@@ -258,12 +259,13 @@ class FirestoreService:
                 data = doc.to_dict()
                 data["id"] = doc.id
 
-                # Use provided model class or infer from collection
                 if model_class:
+                    # Create the API model instance directly with Firestore data
                     results.append(model_class(**data))
                 elif collection_name in COLLECTION_MODELS:
-                    model_class = COLLECTION_MODELS[collection_name]
-                    results.append(model_class(**data))
+                    # Fallback to collection mapping
+                    firestore_model = COLLECTION_MODELS[collection_name]
+                    results.append(firestore_model(**data))
                 else:
                     results.append(data)
 
@@ -295,16 +297,16 @@ class FirestoreService:
         model_class: Optional[Type[T]] = None,
     ) -> List[T]:
         """
-        Get documents belonging to a specific user.
+        Get documents belonging to a specific user as API model instances.
 
         Args:
             collection_name: Name of the collection
             user_id: ID of the user
             limit: Maximum number of results
-            model_class: Optional Pydantic model class
+            model_class: API model class to instantiate with Firestore data
 
         Returns:
-            List of user's documents
+            List of user's documents as API model instances
         """
         return await self.query_collection(
             collection_name=collection_name,

@@ -6,14 +6,13 @@ from traceback import format_exc
 import stripe
 from fastapi import HTTPException
 
-from app.models.firestore import UserSubscription as FirestoreUserSubscription
 from app.models.payment import (
     CreditTransactionType,
     SubscriptionRecord,
     SubscriptionStatus,
     UserSubscriptionResponse,
 )
-from app.services.firestore_service import get_firestore_service
+from app.services.firestore import get_firestore_service
 from app.services.payments.credit_manager import CreditManager
 from app.services.payments.stripe import get_credits_for_subscription_purchase
 
@@ -109,34 +108,18 @@ class SubscriptionManager:
             UserSubscriptionResponse with all subscriptions and active subscription
         """
         try:
-            # Query user subscriptions from Firestore
-            firestore_subscriptions = await self.firestore_service.query_collection(
+            # Query user subscriptions from Firestore with automatic conversion
+            # Pass the API model class directly - automatic conversion!
+            subscriptions = await self.firestore_service.query_collection(
                 collection_name="users_subscriptions",
                 filters=[("user_id", "==", user_id)],
                 order_by="created_at",
-                model_class=FirestoreUserSubscription,
+                model_class=SubscriptionRecord,  # API model class - automatic conversion!
             )
 
-            subscriptions = []
+            # Find active subscription
             active_subscription = None
-
-            # Convert Firestore models to API models
-            for fs_sub in firestore_subscriptions:
-                subscription = SubscriptionRecord(
-                    subscription_id=fs_sub.subscription_id,
-                    user_id=fs_sub.user_id,
-                    stripe_subscription_id=fs_sub.stripe_subscription_id,
-                    plan_name=fs_sub.plan_name,
-                    status=SubscriptionStatus(fs_sub.status),
-                    credits_monthly=fs_sub.credits_monthly,
-                    current_period_start=fs_sub.current_period_start,
-                    current_period_end=fs_sub.current_period_end,
-                    cancel_at_period_end=fs_sub.cancel_at_period_end,
-                    created_at=fs_sub.created_at,
-                    updated_at=fs_sub.updated_at,
-                )
-                subscriptions.append(subscription)
-
+            for subscription in subscriptions:
                 if (
                     subscription.status == SubscriptionStatus.ACTIVE
                     and not active_subscription
@@ -176,12 +159,12 @@ class SubscriptionManager:
             # Get updated subscription data from Stripe if needed
             stripe_sub = stripe.Subscription.retrieve(stripe_subscription_id)
 
-            # Find the subscription document by stripe_subscription_id
+            # Find the subscription document by stripe_subscription_id using automatic conversion
             subscriptions = await self.firestore_service.query_collection(
                 collection_name="users_subscriptions",
                 filters=[("stripe_subscription_id", "==", stripe_subscription_id)],
                 limit=1,
-                model_class=FirestoreUserSubscription,
+                model_class=SubscriptionRecord,  # API model class - automatic conversion!
             )
 
             if not subscriptions:
@@ -234,7 +217,7 @@ class SubscriptionManager:
             True if successful
         """
         try:
-            # Get active subscription from Firestore
+            # Get active subscription from Firestore using automatic conversion
             subscriptions = await self.firestore_service.query_collection(
                 collection_name="users_subscriptions",
                 filters=[
@@ -242,7 +225,7 @@ class SubscriptionManager:
                     ("status", "==", "active"),
                 ],
                 limit=1,
-                model_class=FirestoreUserSubscription,
+                model_class=SubscriptionRecord,  # API model class - automatic conversion!
             )
 
             if not subscriptions:
@@ -288,11 +271,11 @@ class SubscriptionManager:
             True if successful
         """
         try:
-            # Get subscription from Firestore
+            # Get subscription from Firestore using automatic conversion
             subscription = await self.firestore_service.get_document(
                 collection_name="users_subscriptions",
                 document_id=subscription_id,
-                model_class=FirestoreUserSubscription,
+                model_class=SubscriptionRecord,  # API model class - automatic conversion!
             )
 
             if not subscription or subscription.user_id != user_id:

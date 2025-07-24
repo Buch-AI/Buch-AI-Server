@@ -13,12 +13,11 @@ from google.cloud.run_v2.types.condition import Condition
 from PIL import Image
 from pydantic import BaseModel
 
-from app.models.cost_centre import CostCentreManager
-from app.models.firestore import CreationProfile as FirestoreCreationProfile
 from app.models.firestore import VideoGeneratorTask as FirestoreTaskVideoGenerator
 from app.models.shared import BaseCreationProfile
 from app.server.routers.auth_routes import User, get_current_user
-from app.services.firestore_service import get_firestore_service
+from app.services.cost_centre import CostCentreManager
+from app.services.firestore import get_firestore_service
 from app.tasks.video_generator.main import VideoGenerator
 from config import ENV, GCLOUD_STB_CREATIONS_NAME
 
@@ -642,11 +641,11 @@ async def delete_creation(
         firestore_service = get_firestore_service()
         storage_client = storage.Client()
 
-        # First, verify the creation belongs to the user and exists
+        # First, verify the creation belongs to the user and exists using automatic conversion
         creation = await firestore_service.get_document(
             collection_name="creations_profiles",
             document_id=creation_id,
-            model_class=FirestoreCreationProfile,
+            model_class=BaseCreationProfile,  # API model class - automatic conversion!
         )
 
         if not creation or creation.user_id != current_user.username:
@@ -692,11 +691,11 @@ async def update_creation(
         # Initialize Firestore service
         firestore_service = get_firestore_service()
 
-        # First, verify the creation belongs to the user and exists
+        # First, verify the creation belongs to the user and exists using automatic conversion
         creation = await firestore_service.get_document(
             collection_name="creations_profiles",
             document_id=creation_id,
-            model_class=FirestoreCreationProfile,
+            model_class=BaseCreationProfile,  # API model class - automatic conversion!
         )
 
         if not creation or creation.user_id != current_user.username:

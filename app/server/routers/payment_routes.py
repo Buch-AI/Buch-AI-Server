@@ -8,18 +8,18 @@ import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
-from app.models.firestore import PaymentRecord as FirestorePaymentRecord
 from app.models.payment import (
     CreditBalanceResponse,
     CreditTransactionType,
     PaymentHistoryResponse,
+    PaymentRecord,
     PaymentStatus,
     ProductInfo,
     ProductType,
     UserSubscriptionResponse,
 )
 from app.server.routers.auth_routes import User, get_current_user
-from app.services.firestore_service import get_firestore_service
+from app.services.firestore import get_firestore_service
 from app.services.payments.credit_manager import CreditManager
 from app.services.payments.stripe import (
     fetch_products,
@@ -266,23 +266,18 @@ async def get_payment_history(
 ) -> PaymentHistoryResponse:
     """Get payment history for the current user."""
     try:
-        # Query payments from Firestore
-        # NOTE: Removed order_by to avoid index requirement, will sort in Python if needed
-        firestore_payments = await firestore_service.query_collection(
+        # Query payments from Firestore with automatic conversion
+        # Pass the API model class directly - automatic conversion!
+        payments = await firestore_service.query_collection(
             collection_name="payments_records",
             filters=[("user_id", "==", current_user.username)],
             limit=limit,
             offset=offset,
-            model_class=FirestorePaymentRecord,
+            model_class=PaymentRecord,  # API model class - automatic conversion!
         )
 
         # Sort by created_at in Python (temporary solution until index is created)
-        firestore_payments.sort(
-            key=lambda x: x.created_at or datetime.min, reverse=True
-        )
-
-        # Since both models now inherit from the same base, we can use the Firestore models directly
-        payments = firestore_payments
+        payments.sort(key=lambda x: x.created_at or datetime.min, reverse=True)
 
         # Get total count
         total_count = await firestore_service.count_documents(
@@ -339,12 +334,12 @@ async def update_payment_status(
     stripe_payment_intent_id: str, status: PaymentStatus, completed_at: datetime = None
 ) -> None:
     """Update payment status in Firestore."""
-    # Find the payment record by stripe_payment_intent_id
+    # Find the payment record by stripe_payment_intent_id using automatic conversion
     payments = await firestore_service.query_collection(
         collection_name="payments_records",
         filters=[("stripe_payment_intent_id", "==", stripe_payment_intent_id)],
         limit=1,
-        model_class=FirestorePaymentRecord,
+        model_class=PaymentRecord,  # API model class - automatic conversion!
     )
 
     if payments:

@@ -10,7 +10,7 @@ from google.auth.exceptions import DefaultCredentialsError
 from google.genai.types import GenerateImagesConfig
 from PIL import Image
 
-from app.models.cost_centre import CostCentreManager
+from app.services.cost_centre import CostCentreManager
 from app.services.image.common import (
     ImageGenerationRequest,
     ImageGenerationResponse,

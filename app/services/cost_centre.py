@@ -6,8 +6,8 @@ from traceback import format_exc
 from fastapi import HTTPException
 
 from app.models.firestore import CostCentre as FirestoreCostCentre
-from app.models.firestore import CreationProfile as FirestoreCreationProfile
-from app.services.firestore_service import get_firestore_service
+from app.models.shared import BaseCreationProfile
+from app.services.firestore import get_firestore_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,11 +24,11 @@ class CostCentreManager:
         # Initialize Firestore service
         firestore_service = get_firestore_service()
 
-        # First, verify the creation belongs to the user
+        # First, verify the creation belongs to the user using automatic conversion
         creation = await firestore_service.get_document(
             collection_name="creations_profiles",
             document_id=creation_id,
-            model_class=FirestoreCreationProfile,
+            model_class=BaseCreationProfile,  # API model class - automatic conversion!
         )
 
         if not creation or creation.user_id != user_id:

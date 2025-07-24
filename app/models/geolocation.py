@@ -227,7 +227,7 @@ class GeolocationProcessor:
             import uuid
             from datetime import datetime
 
-            from app.services.firestore_service import get_firestore_service
+            from app.services.firestore import get_firestore_service
 
             # Initialize Firestore service
             firestore_service = get_firestore_service()
