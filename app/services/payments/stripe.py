@@ -6,10 +6,14 @@ import stripe
 from fastapi import HTTPException, status
 
 from app.models.shared import ProductInfo, ProductType
+from config import STRIPE_SECRET_KEY
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Configure Stripe
+stripe.api_key = STRIPE_SECRET_KEY
 
 
 async def fetch_products() -> List[ProductInfo]:

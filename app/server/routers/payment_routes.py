@@ -31,14 +31,11 @@ from app.services.payments.stripe import (
     get_subscription_plan_name,
 )
 from app.services.payments.subscription_manager import SubscriptionManager
-from config import STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
+from config import STRIPE_WEBHOOK_SECRET
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Configure Stripe
-stripe.api_key = STRIPE_SECRET_KEY
 
 # Create payment router
 payment_router = APIRouter()
