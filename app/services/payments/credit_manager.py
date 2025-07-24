@@ -1,5 +1,5 @@
 """
-Credit Manager - Firestore Version
+Credit Manager
 
 This module manages user credit operations including balance tracking and transactions,
 using Firestore instead of BigQuery for improved performance and real-time capabilities.
@@ -13,11 +13,11 @@ from typing import List, Optional
 
 from fastapi import HTTPException
 
-from app.models.payment import (
-    CreditBalance,
+from app.models.credits import (
     CreditTransaction,
     CreditTransactionType,
 )
+from app.models.shared import CreditBalance
 from app.services.firestore import get_firestore_service
 
 # Configure logging

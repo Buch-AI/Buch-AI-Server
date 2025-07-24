@@ -5,7 +5,7 @@ from typing import List
 import stripe
 from fastapi import HTTPException, status
 
-from app.models.payment import ProductInfo, ProductType
+from app.models.shared import ProductInfo, ProductType
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

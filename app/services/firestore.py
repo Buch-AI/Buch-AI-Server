@@ -17,9 +17,7 @@ from firebase_admin import firestore, initialize_app
 from google.cloud.firestore import Client, DocumentReference, FieldFilter
 from pydantic import BaseModel
 
-from app.models.firestore import (
-    COLLECTION_MODELS,
-)
+from app.models import COLLECTION_MODELS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

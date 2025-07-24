@@ -8,12 +8,16 @@ import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
-from app.models.payment import (
-    CreditBalanceResponse,
+from app.models.credits import (
     CreditTransactionType,
-    PaymentHistoryResponse,
+)
+from app.models.payments import (
     PaymentRecord,
     PaymentStatus,
+)
+from app.models.shared import (
+    CreditBalanceResponse,
+    PaymentHistoryResponse,
     ProductInfo,
     ProductType,
     UserSubscriptionResponse,
@@ -429,7 +433,7 @@ async def handle_invoice_payment_succeeded(invoice: dict) -> None:
 async def handle_subscription_updated(subscription: dict) -> None:
     """Handle subscription status updates."""
     try:
-        from app.models.payment import SubscriptionStatus
+        from app.models.shared import SubscriptionStatus
 
         stripe_subscription_id = subscription["id"]
         status = SubscriptionStatus(subscription["status"])
@@ -449,7 +453,7 @@ async def handle_subscription_updated(subscription: dict) -> None:
 async def handle_subscription_canceled(subscription: dict) -> None:
     """Handle subscription cancellation."""
     try:
-        from app.models.payment import SubscriptionStatus
+        from app.models.shared import SubscriptionStatus
 
         stripe_subscription_id = subscription["id"]
 

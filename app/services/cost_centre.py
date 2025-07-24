@@ -5,8 +5,8 @@ from traceback import format_exc
 
 from fastapi import HTTPException
 
-from app.models.firestore import CostCentre as FirestoreCostCentre
-from app.models.shared import BaseCreationProfile
+from app.models.creations import BaseCreationProfile
+from app.models.creations import CostCentre as FirestoreCostCentre
 from app.services.firestore import get_firestore_service
 
 # Configure logging

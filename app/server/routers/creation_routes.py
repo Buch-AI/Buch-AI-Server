@@ -13,8 +13,8 @@ from google.cloud.run_v2.types.condition import Condition
 from PIL import Image
 from pydantic import BaseModel
 
-from app.models.firestore import VideoGeneratorTask as FirestoreTaskVideoGenerator
-from app.models.shared import BaseCreationProfile
+from app.models.creations import BaseCreationProfile
+from app.models.tasks import VideoGeneratorTask as FirestoreTaskVideoGenerator
 from app.server.routers.auth_routes import User, get_current_user
 from app.services.cost_centre import CostCentreManager
 from app.services.firestore import get_firestore_service

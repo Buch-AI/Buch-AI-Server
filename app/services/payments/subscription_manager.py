@@ -6,8 +6,8 @@ from traceback import format_exc
 import stripe
 from fastapi import HTTPException
 
-from app.models.payment import (
-    CreditTransactionType,
+from app.models.credits import CreditTransactionType
+from app.models.shared import (
     SubscriptionRecord,
     SubscriptionStatus,
     UserSubscriptionResponse,

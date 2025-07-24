@@ -10,9 +10,9 @@ from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 
-from app.models.firestore import UserAuth
-from app.models.geolocation import GeolocationProcessor
+from app.models.users import UserAuth
 from app.services.firestore import get_firestore_service
+from app.services.geolocation import GeolocationProcessor
 from config import AUTH_JWT_KEY
 
 # Configure logging

@@ -1,76 +1,67 @@
 """
 Shared Data Models
 
-This module contains shared Pydantic models that serve as the single source of truth
-for data structures. These models can be used for both Firestore storage and API responses,
-eliminating field duplication between Firestore and API models.
+This module contains shared Pydantic models, base classes, and embedded models
+that are used across multiple database schemas or for API responses.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from enum import Enum
+from typing import Any, List, Optional
 
-from pydantic import BaseModel, Field
-
-
-class BaseCreationProfile(BaseModel):
-    """Base creation profile model shared between Firestore and API."""
-
-    creation_id: str = Field(..., description="Unique creation identifier")
-    title: str = Field(..., min_length=1, description="Creation title")
-    description: Optional[str] = Field(None, description="Creation description")
-    creator_id: str = Field(..., description="ID of the user who created this")
-    user_id: str = Field(..., description="Current owner user ID")
-    created_at: datetime = Field(..., description="Creation timestamp")
-    updated_at: datetime = Field(..., description="Last update timestamp")
-    status: str = Field(..., description="Creation status (draft, published, etc.)")
-    visibility: str = Field(
-        ..., description="Visibility setting (public, private, etc.)"
-    )
-    tags: List[str] = Field(
-        default_factory=list, description="Tags associated with creation"
-    )
-    metadata: Optional[Dict[str, Any]] = Field(
-        default_factory=dict, description="Additional metadata"
-    )
-    is_active: bool = Field(True, description="Whether the creation is active")
+from google.cloud.firestore import DocumentReference
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class BasePaymentRecord(BaseModel):
-    """Base payment record model shared between Firestore and API."""
+class FirestoreBaseModel(BaseModel):
+    """Base model for all Firestore documents with common configuration."""
 
-    payment_id: str = Field(..., description="Unique payment identifier")
-    user_id: str = Field(..., description="Associated user ID")
-    stripe_payment_intent_id: str = Field(..., description="Stripe payment intent ID")
-    amount: int = Field(..., gt=0, description="Payment amount in cents")
-    currency: str = Field(..., description="Payment currency code")
-    status: str = Field(..., description="Payment status")
-    product_type: str = Field(..., description="Type of product purchased")
-    product_id: str = Field(..., description="Product identifier")
-    quantity: int = Field(..., gt=0, description="Quantity purchased")
-    description: Optional[str] = Field(None, description="Payment description")
-    created_at: datetime = Field(..., description="Payment creation timestamp")
-    updated_at: datetime = Field(..., description="Last update timestamp")
-    completed_at: Optional[datetime] = Field(
-        None, description="Payment completion timestamp"
+    model_config = ConfigDict(
+        # Allow population by field name or alias
+        populate_by_name=True,
+        # Convert datetime objects to timestamps for Firestore
+        json_encoders={
+            datetime: lambda dt: dt,  # Firestore handles datetime conversion
+            DocumentReference: lambda ref: ref.path,  # Convert refs to paths
+        },
+        # Validate assignments
+        validate_assignment=True,
+        # Use enum values instead of names
+        use_enum_values=True,
     )
 
 
-class BaseCreditTransaction(BaseModel):
-    """Base credit transaction model shared between Firestore and API."""
+# Enums
+class SubscriptionStatus(str, Enum):
+    """Subscription status enumeration."""
 
-    transaction_id: str = Field(..., description="Unique transaction identifier")
-    user_id: str = Field(..., description="Associated user ID")
-    type: str = Field(..., description="Transaction type")
-    amount: int = Field(
-        ..., description="Credit amount (positive for earned, negative for spent)"
-    )
-    description: Optional[str] = Field(None, description="Transaction description")
-    reference_id: Optional[str] = Field(None, description="Reference to related entity")
-    created_at: datetime = Field(..., description="Transaction timestamp")
+    ACTIVE = "active"
+    CANCELED = "canceled"
+    PAST_DUE = "past_due"
+    UNPAID = "unpaid"
+    INCOMPLETE = "incomplete"
+    INCOMPLETE_EXPIRED = "incomplete_expired"
+    TRIALING = "trialing"
 
 
-class BaseUserCredits(BaseModel):
-    """Base user credits model shared between Firestore and API."""
+class ProductType(str, Enum):
+    """Product type enumeration."""
+
+    BONUS = "bonus"  # One-time Stripe product
+    SUBSCRIPTION = "subscription"  # Recurring Stripe product
+
+
+# Embedded Models
+class SocialLink(BaseModel):
+    """Social media link embedded in user profiles."""
+
+    platform: str = Field(..., description="Social media platform name")
+    url: str = Field(..., description="Profile URL on the platform")
+
+
+# API Response Models
+class CreditBalance(BaseModel):
+    """Credit balance model for API responses."""
 
     user_id: str = Field(..., description="Associated user ID")
     balance: int = Field(..., ge=0, description="Current credit balance")
@@ -80,8 +71,18 @@ class BaseUserCredits(BaseModel):
     created_at: datetime = Field(..., description="Record creation timestamp")
 
 
-class BaseUserSubscription(BaseModel):
-    """Base user subscription model shared between Firestore and API."""
+class CreditBalanceResponse(BaseModel):
+    """Response model for user credit balance."""
+
+    user_id: str
+    balance: int
+    total_earned: int
+    total_spent: int
+    last_updated: datetime
+
+
+class SubscriptionRecord(BaseModel):
+    """Subscription record model for API responses."""
 
     subscription_id: str = Field(..., description="Unique subscription identifier")
     user_id: str = Field(..., description="Associated user ID")
@@ -100,26 +101,26 @@ class BaseUserSubscription(BaseModel):
     updated_at: datetime = Field(..., description="Last update timestamp")
 
 
-class BaseCostCentre(BaseModel):
-    """Base cost centre model shared between Firestore and API."""
+class UserSubscriptionResponse(BaseModel):
+    """Response model for user subscription information."""
 
-    cost_centre_id: str = Field(..., description="Unique cost centre identifier")
-    creation_id: str = Field(..., description="Associated creation ID")
-    user_id: str = Field(..., description="User who owns this cost centre")
-    created_at: datetime = Field(..., description="When the cost centre was created")
-    cost: float = Field(..., ge=0, description="Total cost tracked by this centre")
+    subscriptions: List[SubscriptionRecord]
+    active_subscription: Optional[SubscriptionRecord] = None
 
 
-class BaseVideoGeneratorTask(BaseModel):
-    """Base video generator task model shared between Firestore and API."""
+class PaymentHistoryResponse(BaseModel):
+    """Response model for payment history."""
 
-    creation_id: str = Field(..., description="Associated creation ID")
-    execution_id: str = Field(..., description="Unique execution identifier")
-    created_at: datetime = Field(..., description="Task creation timestamp")
-    updated_at: datetime = Field(..., description="Last update timestamp")
-    status: str = Field(
-        ..., description="Task status (pending, running, completed, failed)"
-    )
-    metadata: Optional[Dict[str, Any]] = Field(
-        default_factory=dict, description="Task metadata"
-    )
+    payments: List[Any]  # BasePaymentRecord - avoiding circular import
+    total_count: int
+
+
+class ProductInfo(BaseModel):
+    """Product information model from Stripe."""
+
+    product_id: str
+    name: str
+    description: str
+    price: int  # Price in cents
+    currency: str = "usd"
+    type: ProductType

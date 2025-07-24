@@ -6,7 +6,7 @@ from typing import Annotated, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.models.shared import BaseCreationProfile
+from app.models.creations import BaseCreationProfile
 from app.server.routers.auth_routes import User, get_current_user
 from app.services.firestore import get_firestore_service
 
