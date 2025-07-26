@@ -108,7 +108,7 @@ jobs:
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
-          sed -e "s/{{BUCHAI_ENV}}/${{ vars.BUCHAI_ENV }}/g" \
+          sed -e "s|{{BUCHAI_ENV}}|${{ vars.BUCHAI_ENV }}|g" \
               -e "s|{{SERVER_IMAGE_TAG}}|${{ needs.build-docker.outputs.server_image_tag }}|g" \
               -e "s|{{VIDGEN_IMAGE_TAG}}|${{ needs.build-docker.outputs.vidgen_image_tag }}|g" \
               terraform/p.tfvars.template > terraform/terraform.tfvars
